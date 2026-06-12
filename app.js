@@ -1210,6 +1210,8 @@ document.addEventListener('DOMContentLoaded', () => {
       }
       await Auth.sendOtp(email);
       document.getElementById('auth-form-wrap').classList.add('hidden');
+      document.getElementById('auth-title')?.classList.add('hidden');
+      document.getElementById('auth-subtitle')?.classList.add('hidden');
       document.getElementById('auth-otp-email').textContent = email;
       document.getElementById('auth-otp-wrap').classList.remove('hidden');
       setTimeout(() => document.getElementById('auth-otp-input')?.focus(), 50);
@@ -1247,6 +1249,8 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('auth-otp-back')?.addEventListener('click', () => {
     document.getElementById('auth-otp-wrap').classList.add('hidden');
     document.getElementById('auth-form-wrap').classList.remove('hidden');
+    document.getElementById('auth-title')?.classList.remove('hidden');
+    document.getElementById('auth-subtitle')?.classList.remove('hidden');
   });
 
   // Onboarding form

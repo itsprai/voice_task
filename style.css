@@ -88,43 +88,43 @@ body::before {
 
 .auth-wrap {
   width: 100%;
-  max-width: 400px;
+  max-width: 340px;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 12px;
+  gap: 8px;
 }
 
 .auth-logo {
-  width: 84px;
-  height: 84px;
+  width: 60px;
+  height: 60px;
   background: var(--primary);
-  border-radius: 26px;
+  border-radius: 18px;
   display: flex;
   align-items: center;
   justify-content: center;
-  margin-bottom: 8px;
-  box-shadow: 0 10px 28px rgba(26,140,255,0.35);
+  margin-bottom: 6px;
+  box-shadow: 0 8px 22px rgba(26,140,255,0.32);
 }
 
-.auth-logo svg { stroke: #ffffff; }
+.auth-logo svg { stroke: #ffffff; width: 28px; height: 28px; }
 
 .auth-app-name {
-  font-size: 32px;
+  font-size: 22px;
   font-weight: 800;
   color: var(--text);
   letter-spacing: -0.02em;
 }
 
 .auth-title {
-  font-size: 18px;
+  font-size: 15px;
   font-weight: 600;
   color: var(--text);
   text-align: center;
 }
 
 .auth-subtitle {
-  font-size: 15px;
+  font-size: 13px;
   color: var(--muted);
   text-align: center;
   line-height: 1.5;
@@ -134,16 +134,16 @@ body::before {
   width: 100%;
   display: flex;
   flex-direction: column;
-  gap: 14px;
-  margin-top: 12px;
+  gap: 10px;
+  margin-top: 10px;
 }
 
 .auth-input {
   width: 100%;
-  padding: 16px 18px;
+  padding: 13px 15px;
   border: 1px solid #cbd5e1;
   border-radius: var(--radius-btn);
-  font-size: 16px;
+  font-size: 15px;
   font-family: inherit;
   color: var(--text);
   background: white;
@@ -159,12 +159,12 @@ body::before {
 
 .auth-btn {
   width: 100%;
-  padding: 16px;
+  padding: 13px;
   background: var(--primary);
   color: white;
   border: none;
   border-radius: var(--radius-btn);
-  font-size: 16px;
+  font-size: 15px;
   font-weight: 700;
   cursor: pointer;
   font-family: inherit;
@@ -176,12 +176,12 @@ body::before {
 .auth-btn:active   { transform: scale(0.985); }
 .auth-btn:disabled { opacity: 0.6; cursor: default; box-shadow: none; }
 
-.auth-sent { display: flex; flex-direction: column; align-items: center; gap: 10px; width: 100%; }
-.auth-sent-title { font-size: 18px; font-weight: 700; }
-.auth-sent-sub   { font-size: 14px; color: var(--muted); text-align: center; line-height: 1.5; }
+.auth-sent { display: flex; flex-direction: column; align-items: center; gap: 8px; width: 100%; }
+.auth-sent-title { font-size: 15px; font-weight: 600; }
+.auth-sent-sub   { font-size: 13px; color: var(--muted); text-align: center; line-height: 1.5; }
 .auth-sent .auth-form { width: 100%; margin-top: 4px; }
-.auth-otp-input  { text-align: center; letter-spacing: 10px; font-size: 22px; font-weight: 700; }
-.auth-text-btn   { background: none; border: none; color: var(--primary); font-size: 14px; font-weight: 600; cursor: pointer; margin-top: 6px; font-family: inherit; }
+.auth-otp-input  { text-align: center; letter-spacing: 8px; font-size: 18px; font-weight: 700; }
+.auth-text-btn   { background: none; border: none; color: var(--primary); font-size: 13px; font-weight: 600; cursor: pointer; margin-top: 6px; font-family: inherit; }
 
 /* ─── Onboarding role cards ──────────────────────────────────────────── */
 .onboard-label {
@@ -702,6 +702,23 @@ body::before {
   color: var(--text); outline: none; background: white;
 }
 .add-task-date:focus { border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-soft); }
+
+/* iOS renders date/time inputs with intrinsic UA sizing that overflows the
+   card and inflates the height — strip it and pin the box */
+.add-task-date,
+.pipeline-edit-date,
+.pipeline-edit-time {
+  -webkit-appearance: none;
+  appearance: none;
+  min-width: 0;
+  max-width: 100%;
+  height: 46px;
+  text-align: left;
+}
+input[type="date"]::-webkit-date-and-time-value,
+input[type="time"]::-webkit-date-and-time-value {
+  text-align: left;
+}
 .add-task-btn {
   width: 100%; padding: 15px;
   background: var(--primary); color: white;
@@ -844,73 +861,95 @@ body::before {
   top: 0; left: 0; right: 0;
   height: var(--real-height, 100dvh);
   z-index: 500;
-  background: rgba(15,23,42,0.55);
-  -webkit-backdrop-filter: blur(14px);
-  backdrop-filter: blur(14px);
+  background: rgba(40,48,62,0.72);
+  -webkit-backdrop-filter: blur(18px);
+  backdrop-filter: blur(18px);
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 26px;
-  padding: 40px 28px calc(40px + var(--safe-bottom));
+  gap: 28px;
+  padding: 48px 28px calc(28px + var(--safe-bottom));
   animation: fade-in 0.2s ease;
+  overflow: hidden;
+}
+
+/* Soft green ambience glow (matches mockup) */
+.voice-overlay::before {
+  content: '';
+  position: absolute;
+  left: -10%; top: 38%;
+  width: 70%; height: 40%;
+  background: radial-gradient(closest-side, rgba(74,222,128,0.30), transparent 70%);
+  filter: blur(30px);
+  pointer-events: none;
 }
 
 .voice-overlay-mic {
-  width: 88px; height: 88px;
+  width: 80px; height: 80px;
   border-radius: 50%;
   background: var(--primary);
   display: flex; align-items: center; justify-content: center;
-  box-shadow: 0 0 0 14px rgba(26,140,255,0.18), 0 0 0 28px rgba(26,140,255,0.08);
-  animation: overlay-mic-pulse 1.6s ease-in-out infinite;
+  box-shadow: 0 0 34px 10px rgba(26,140,255,0.45);
+  animation: overlay-mic-pulse 1.8s ease-in-out infinite;
+  position: relative;
 }
-.voice-overlay-mic svg { width: 36px; height: 36px; stroke: white; }
+.voice-overlay-mic svg { width: 32px; height: 32px; stroke: white; }
 @keyframes overlay-mic-pulse {
-  0%,100% { box-shadow: 0 0 0 12px rgba(26,140,255,0.20), 0 0 0 24px rgba(26,140,255,0.08); }
-  50%     { box-shadow: 0 0 0 20px rgba(26,140,255,0.14), 0 0 0 38px rgba(26,140,255,0.05); }
+  0%,100% { box-shadow: 0 0 30px 8px rgba(26,140,255,0.40); }
+  50%     { box-shadow: 0 0 46px 16px rgba(26,140,255,0.55); }
 }
 
 .voice-overlay-text {
   color: white;
-  font-size: 21px;
-  font-weight: 600;
+  font-size: 19px;
+  font-weight: 500;
   text-align: center;
-  line-height: 1.45;
+  line-height: 1.5;
   max-width: 420px;
-  min-height: 60px;
+  min-height: 58px;
+  position: relative;
 }
 
-.voice-eq { display: flex; gap: 4px; align-items: center; height: 26px; }
+.voice-eq { display: flex; gap: 5px; align-items: center; height: 22px; position: relative; }
 .voice-eq span {
-  width: 4px; border-radius: 100px;
-  background: var(--primary);
+  width: 3.5px; border-radius: 100px;
+  background: rgba(255,255,255,0.85);
   animation: eq-bounce 0.9s ease-in-out infinite;
 }
-.voice-eq span:nth-child(1) { height: 12px; animation-delay: 0s; }
-.voice-eq span:nth-child(2) { height: 22px; animation-delay: 0.12s; background: #4ade80; }
-.voice-eq span:nth-child(3) { height: 16px; animation-delay: 0.24s; }
-.voice-eq span:nth-child(4) { height: 24px; animation-delay: 0.36s; background: #4ade80; }
-.voice-eq span:nth-child(5) { height: 13px; animation-delay: 0.48s; }
-@keyframes eq-bounce { 0%,100% { transform: scaleY(0.5); } 50% { transform: scaleY(1.15); } }
+.voice-eq span:nth-child(1) { height: 16px; animation-delay: 0s; }
+.voice-eq span:nth-child(2) { height: 22px; animation-delay: 0.15s; }
+.voice-eq span:nth-child(3) { height: 16px; animation-delay: 0.3s; }
+@keyframes eq-bounce { 0%,100% { transform: scaleY(0.55); } 50% { transform: scaleY(1.1); } }
+
+.voice-overlay-footer {
+  position: absolute;
+  left: 0; right: 0;
+  bottom: calc(34px + var(--safe-bottom));
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+}
 
 .voice-overlay-stop {
-  display: flex; align-items: center; gap: 9px;
-  background: var(--danger);
+  background: rgba(255,255,255,0.16);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
   color: white;
   border: none;
   border-radius: 100px;
-  padding: 14px 34px;
-  font-size: 16px;
-  font-weight: 700;
+  padding: 13px 28px;
+  font-size: 15px;
+  font-weight: 600;
   font-family: inherit;
   cursor: pointer;
-  box-shadow: 0 8px 22px rgba(220,38,38,0.45);
-  transition: transform 0.1s;
+  transition: transform 0.1s, background 0.15s;
 }
-.voice-overlay-stop:active { transform: scale(0.96); }
-.voice-overlay-hint { color: rgba(255,255,255,0.65); font-size: 12px; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase; min-height: 15px; }
+.voice-overlay-stop:active { transform: scale(0.96); background: rgba(255,255,255,0.26); }
+.voice-overlay-hint { color: rgba(255,255,255,0.5); font-size: 11px; font-weight: 600; letter-spacing: 0.22em; text-transform: uppercase; min-height: 14px; }
 
-.voice-overlay-result { width: 100%; max-width: 420px; animation: fade-in 0.25s ease; }
+.voice-overlay-result { width: 100%; max-width: 420px; animation: fade-in 0.25s ease; position: relative; }
 
 /* ─── Toast ──────────────────────────────────────────────────────────── */
 .toast {
