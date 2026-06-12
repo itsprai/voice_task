@@ -927,15 +927,6 @@ body::before {
 .toast--error { background: var(--danger); }
 .toast-undo-btn { background: rgba(255,255,255,0.25); border: 1px solid rgba(255,255,255,0.5); color: white; border-radius: 8px; padding: 3px 10px; font-size: 12px; font-weight: 600; cursor: pointer; margin-left: 10px; flex-shrink: 0; }
 
-/* ─── iOS standalone (home-screen) mode ──────────────────────────────────
-   100vh is the only viewport measurement that is correct on PWA cold start:
-   dvh and window.innerHeight stay stale until the device is rotated. With
-   no browser chrome, 100vh equals the real full screen height. */
-@media (display-mode: standalone) {
-  .screen        { height: 100vh; }
-  .voice-overlay { height: 100vh; }
-}
-
 /* ─── Desktop layout — centered app column ───────────────────────────── */
 @media (min-width: 760px) {
   body { background: #e8edf5; }

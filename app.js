@@ -1307,8 +1307,51 @@ document.addEventListener('DOMContentLoaded', () => {
     root.style.setProperty('--safe-bottom-px', `${measureSafeBottom()}px`);
   }
 
-  function run() { applyLayout(); setTimeout(applyLayout, 80); }
+  function run() { applyLayout(); setTimeout(applyLayout, 80); setTimeout(applyLayout, 400); setTimeout(applyLayout, 1200); }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', run);
   else run();
   window.addEventListener('resize', applyLayout, { passive: true });
+  window.addEventListener('orientationchange', () => setTimeout(applyLayout, 120), { passive: true });
+  window.visualViewport?.addEventListener('resize', applyLayout, { passive: true });
+})();
+
+// ── TEMP viewport debug overlay (standalone or ?vpdebug) — remove after fix ──
+(function debugViewport() {
+  const standalone = navigator.standalone === true || matchMedia('(display-mode: standalone)').matches;
+  if (!standalone && !location.search.includes('vpdebug')) return;
+
+  function init() {
+    const el = document.createElement('div');
+    el.style.cssText = 'position:fixed;top:90px;left:8px;z-index:9999;background:rgba(0,0,0,0.78);color:#4ade80;font:11px/1.5 monospace;padding:6px 9px;border-radius:8px;pointer-events:none;white-space:pre';
+    document.body.appendChild(el);
+
+    const probeVH = document.createElement('div');
+    probeVH.style.cssText = 'position:fixed;top:0;left:-9999px;height:100vh;width:1px;visibility:hidden';
+    document.body.appendChild(probeVH);
+
+    const probeDVH = document.createElement('div');
+    probeDVH.style.cssText = 'position:fixed;top:0;left:-9999px;height:100dvh;width:1px;visibility:hidden';
+    document.body.appendChild(probeDVH);
+
+    const probeSA = document.createElement('div');
+    probeSA.style.cssText = 'position:fixed;left:-9999px;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);width:1px;visibility:hidden';
+    document.body.appendChild(probeSA);
+
+    function upd() {
+      const cs  = getComputedStyle(probeSA);
+      const nav = document.querySelector('.screen--active .bottom-nav')?.getBoundingClientRect();
+      el.textContent =
+        `ih : ${window.innerHeight}\n` +
+        `vv : ${Math.round(visualViewport?.height ?? -1)} ot:${Math.round(visualViewport?.offsetTop ?? -1)}\n` +
+        `sh : ${screen.height}\n` +
+        `vh : ${Math.round(probeVH.getBoundingClientRect().height)}  dvh: ${Math.round(probeDVH.getBoundingClientRect().height)}\n` +
+        `saT: ${cs.paddingTop}  saB: ${cs.paddingBottom}\n` +
+        `nav: ${nav ? Math.round(nav.top) + '→' + Math.round(nav.bottom) : 'n/a'}`;
+    }
+    upd();
+    setInterval(upd, 1000);
+  }
+
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
+  else init();
 })();
