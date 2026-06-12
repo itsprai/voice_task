@@ -1300,13 +1300,10 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function applyLayout() {
-    // CSS anchors all screens to var(--real-height); env() handles safe areas.
-    // In iOS standalone (home-screen) mode window.innerHeight excludes the
-    // safe-area zones even though the webview is fullscreen — screen.height
-    // is the truthful value there.
-    const standalone = navigator.standalone === true || matchMedia('(display-mode: standalone)').matches;
-    const h = standalone ? Math.max(window.innerHeight, screen.height) : window.innerHeight;
-    root.style.setProperty('--real-height', `${h}px`);
+    // Browser mode only — standalone mode is handled in CSS with 100vh,
+    // the sole viewport unit that is correct on PWA cold start (dvh and
+    // innerHeight report stale values until the device is rotated).
+    root.style.setProperty('--real-height', `${window.innerHeight}px`);
     root.style.setProperty('--safe-bottom-px', `${measureSafeBottom()}px`);
   }
 
