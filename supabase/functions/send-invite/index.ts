@@ -1,6 +1,7 @@
-// send-invite — emails an invite to a team member using Supabase's built-in
-// "Invite user" email. Falls back to a magic-link email if the invitee
-// already has an account (inviteUserByEmail rejects existing users).
+// send-invite — adds a team member for a manager.
+//   • Email already registered as a team member → link directly, no email.
+//   • Registered but never onboarded → magic-link email landing on the invite.
+//   • Not registered → Supabase's built-in "Invite user" email.
 import { createClient } from "npm:@supabase/supabase-js@2";
 
 const CORS = {
@@ -53,26 +54,51 @@ Deno.serve(async (req) => {
 
     // Supabase validates redirectTo against the auth Redirect URLs allowlist
     const redirectTo = `${String(appUrl).replace(/\/$/, "")}/?invite=${inviteToken}`;
+    const normEmail = String(email).trim().toLowerCase();
 
-    const { error } = await admin.auth.admin.inviteUserByEmail(email, {
+    // Already registered? Look the email up among existing users.
+    const { data: list } = await admin.auth.admin.listUsers({ page: 1, perPage: 1000 });
+    const existing = list?.users?.find(
+      (u: { email?: string }) => (u.email ?? "").toLowerCase() === normEmail,
+    );
+
+    if (existing) {
+      const { data: prof } = await admin
+        .from("profiles").select("id, full_name, role").eq("id", existing.id).single();
+
+      if (prof?.role === "assigner") {
+        return json({ error: "This email belongs to a manager account" }, 400);
+      }
+
+      if (prof) {
+        // Registered team member → link to this manager directly, no email
+        const { error: mapErr } = await admin
+          .from("assigner_assignee_map")
+          .upsert(
+            { assigner_id: user.id, assignee_id: prof.id },
+            { ignoreDuplicates: true },
+          );
+        if (mapErr) return json({ error: mapErr.message }, 400);
+        await admin.from("invites").update({ status: "accepted" }).eq("id", invite.id);
+        return json({ linked: true, name: prof.full_name });
+      }
+
+      // Auth user exists but never finished onboarding → magic-link email
+      // that lands on the invite URL (onboarding will force the assignee role)
+      const { error: otpErr } = await admin.auth.signInWithOtp({
+        email: normEmail,
+        options: { emailRedirectTo: redirectTo },
+      });
+      if (otpErr) return json({ error: otpErr.message }, 400);
+      return json({ sent: true, existing: true });
+    }
+
+    // Brand-new user → proper invite email
+    const { error } = await admin.auth.admin.inviteUserByEmail(normEmail, {
       redirectTo,
       data: { full_name: name ?? "" },
     });
-
-    if (error) {
-      const alreadyExists =
-        error.status === 422 || /already.*registered/i.test(error.message);
-      if (alreadyExists) {
-        // Existing account → send a magic-link email that lands on the invite URL
-        const { error: otpErr } = await admin.auth.signInWithOtp({
-          email,
-          options: { emailRedirectTo: redirectTo },
-        });
-        if (otpErr) return json({ error: otpErr.message }, 400);
-        return json({ sent: true, existing: true });
-      }
-      return json({ error: error.message }, 400);
-    }
+    if (error) return json({ error: error.message }, 400);
 
     return json({ sent: true });
   } catch (e) {

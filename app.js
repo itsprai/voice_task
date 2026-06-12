@@ -561,38 +561,52 @@ const App = {
 
       try {
         const { invite, link } = await Invite.create(name, email);
-        this.state.pendingInvites.push(invite);
 
-        // Email the invite directly; fall back to manual sharing if it fails
-        let emailSent = false;
+        // Send via Edge Function: links instantly if the member is already
+        // registered, otherwise emails the invite
+        let result = null;
         try {
-          await Invite.sendEmail(invite);
-          emailSent = true;
+          result = await Invite.sendEmail(invite);
         } catch (mailErr) {
           console.warn('Invite email failed:', mailErr);
         }
 
-        if (resultEl) {
-          resultEl.classList.remove('hidden');
-          resultEl.innerHTML = emailSent
-            ? `
-            <p class="invite-result-label">✉️ Invite email sent to ${escapeHTML(email)}</p>
-            <div class="invite-result-actions">
-              <button class="invite-copy-now" data-token="${invite.token}">Copy Backup Link</button>
-            </div>
-          `
-            : `
-            <p class="invite-result-label">Email could not be sent — share this link instead</p>
-            <p class="invite-result-link">${escapeHTML(link)}</p>
-            <div class="invite-result-actions">
-              <button class="invite-copy-now" data-token="${invite.token}">Copy Link</button>
-              <button class="invite-share-now" data-token="${invite.token}" data-name="${escapeHTML(name)}">Share</button>
-            </div>
-          `;
+        if (result?.linked) {
+          const memberName = result.name || name;
+          if (resultEl) {
+            resultEl.classList.remove('hidden');
+            resultEl.innerHTML = `
+              <p class="invite-result-label">✅ ${escapeHTML(memberName)} is already on TaskVoice — added to your team!</p>
+            `;
+          }
+          this.showToast(`${memberName} added to your team!`);
+          await this._pullAll();
+          this._renderPipeline();
+        } else {
+          this.state.pendingInvites.push(invite);
+          const emailSent = !!result?.sent;
+          if (resultEl) {
+            resultEl.classList.remove('hidden');
+            resultEl.innerHTML = emailSent
+              ? `
+              <p class="invite-result-label">✉️ Invite email sent to ${escapeHTML(email)}</p>
+              <div class="invite-result-actions">
+                <button class="invite-copy-now" data-token="${invite.token}">Copy Backup Link</button>
+              </div>
+            `
+              : `
+              <p class="invite-result-label">Email could not be sent — share this link instead</p>
+              <p class="invite-result-link">${escapeHTML(link)}</p>
+              <div class="invite-result-actions">
+                <button class="invite-copy-now" data-token="${invite.token}">Copy Link</button>
+                <button class="invite-share-now" data-token="${invite.token}" data-name="${escapeHTML(name)}">Share</button>
+              </div>
+            `;
+          }
+          this.showToast(emailSent ? `Invite emailed to ${name}!` : `Invite created for ${name}`);
+          this.state.activePersonId = 'invite_' + invite.id;
+          this._renderPipeline();
         }
-        this.showToast(emailSent ? `Invite emailed to ${name}!` : `Invite created for ${name}`);
-        this.state.activePersonId = 'invite_' + invite.id;
-        this._renderPipeline();
       } catch (err) {
         this.showToast(err.message || 'Could not create invite', true);
         submitBtn.disabled = false;
