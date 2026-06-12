@@ -67,6 +67,14 @@ const App = {
       });
     });
 
+    // iOS suspends standalone PWAs in the background and kills the realtime
+    // socket — re-pull whenever the app returns to the foreground
+    const refreshOnResume = () => {
+      if (document.visibilityState === 'visible' && this._booted) this._pullAll();
+    };
+    document.addEventListener('visibilitychange', refreshOnResume);
+    window.addEventListener('pageshow', refreshOnResume);
+
     const session = await Auth.init();
 
     if (!session) {
