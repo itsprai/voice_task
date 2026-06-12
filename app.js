@@ -135,7 +135,7 @@ const App = {
     const authScreen = document.getElementById('screen-auth');
 
     if (invite && invite.status === 'pending') {
-      document.getElementById('auth-title').textContent   = '👋 You\'ve been invited!';
+      document.getElementById('auth-title').textContent   = 'You\'ve been invited!';
       document.getElementById('auth-subtitle').textContent = `${invite.assigner?.full_name || 'Your manager'} has invited you to TaskVoice.`;
       document.getElementById('auth-email').value = invite.email;
       document.getElementById('auth-email').readOnly = true;
@@ -691,7 +691,7 @@ const App = {
           if (resultEl) {
             resultEl.classList.remove('hidden');
             resultEl.innerHTML = `
-              <p class="invite-result-label">✅ ${escapeHTML(memberName)} is already on TaskVoice — added to your team!</p>
+              <p class="invite-result-label">${escapeHTML(memberName)} is already on TaskVoice — added to your team!</p>
             `;
           }
           this.showToast(`${memberName} added to your team!`);
@@ -704,7 +704,7 @@ const App = {
             resultEl.classList.remove('hidden');
             resultEl.innerHTML = emailSent
               ? `
-              <p class="invite-result-label">✉️ Invite email sent to ${escapeHTML(email)}</p>
+              <p class="invite-result-label">Invite email sent to ${escapeHTML(email)}</p>
               <div class="invite-result-actions">
                 <button class="invite-copy-now" data-token="${invite.token}">Copy Backup Link</button>
               </div>

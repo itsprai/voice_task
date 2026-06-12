@@ -12,7 +12,12 @@ function renderAssigneeTasksPage(tasks, assigners, editingTaskId = null) {
   if (!assigners.length) {
     main.innerHTML = `
       <div class="empty-section" style="padding:48px 20px;text-align:center;">
-        <p style="font-size:32px;margin-bottom:12px;">👋</p>
+        <p style="margin-bottom:12px;color:var(--primary);">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" width="40" height="40">
+            <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/>
+            <path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+          </svg>
+        </p>
         <p style="font-weight:600;margin-bottom:6px;">You're in!</p>
         <p style="color:var(--muted);font-size:14px;">Your manager will assign tasks to you soon. Check back here to see them.</p>
       </div>

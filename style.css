@@ -130,6 +130,8 @@ body::before {
   line-height: 1.5;
 }
 
+#auth-form-wrap { width: 100%; }
+
 .auth-form {
   width: 100%;
   display: flex;
@@ -223,7 +225,7 @@ body::before {
   box-shadow: 0 0 0 3px var(--primary-soft);
 }
 
-.role-card-icon  { font-size: 26px; }
+.role-card-icon  { color: var(--primary); display: flex; }
 .role-card-title { font-size: 14px; font-weight: 700; color: var(--text); }
 .role-card-sub   { font-size: 11px; color: var(--muted); text-align: center; line-height: 1.3; }
 
@@ -554,7 +556,7 @@ body::before {
 }
 .person-tab--active { background: var(--primary); color: white; box-shadow: 0 4px 12px rgba(26,140,255,0.35); }
 .person-tab--active .tab-avatar { background: rgba(255,255,255,0.22); color: white; }
-.person-tab--pending { box-shadow: none; border: 1.5px dashed #b6c2d4; background: transparent; padding-left: 14px; }
+.person-tab--pending { box-shadow: none; border: 1.5px dashed #b6c2d4; background: transparent; }
 .person-tab--pending.person-tab--active { background: var(--primary); border-color: var(--primary); color: white; }
 .tab-pin-icon { flex-shrink: 0; opacity: 0.8; }
 
@@ -744,7 +746,7 @@ input[type="time"]::-webkit-date-and-time-value {
 
 /* ─── Pending invite panel ───────────────────────────────────────────── */
 .pending-invite-panel { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 40px 20px; text-align: center; background: white; border-radius: var(--radius-card); box-shadow: var(--shadow-card); margin-top: 8px; }
-.pending-invite-icon   { font-size: 44px; }
+.pending-invite-icon   { color: var(--primary); display: flex; }
 .pending-invite-name   { font-size: 20px; font-weight: 800; letter-spacing: -0.01em; }
 .pending-invite-email  { font-size: 14px; color: var(--muted); }
 .pending-invite-status { font-size: 13px; color: #92400e; font-weight: 600; background: var(--warning-soft); padding: 6px 14px; border-radius: 100px; }

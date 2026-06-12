@@ -55,16 +55,19 @@ function renderPipelinePage(tasks, activePersonId, editMode, showAddPerson, pinn
     `;
   }).join('');
 
-  const pendingTabs = pendingInvites.map(inv => `
+  const pendingTabs = pendingInvites.map(inv => {
+    const initial = escapeHTML(inv.name.trim()[0]?.toUpperCase() || '?');
+    return `
     <div class="tab-wrapper">
       <button class="person-tab person-tab--pending ${('invite_' + inv.id) === personId ? 'person-tab--active' : ''}"
               data-invite-id="${inv.id}">
-        ${escapeHTML(inv.name)}
+        <span class="tab-avatar">${initial}</span>${escapeHTML(inv.name)}
         <span class="tab-pending-badge">Invited</span>
       </button>
       ${editMode ? `<button class="tab-delete-btn" data-invite-id="${inv.id}" aria-label="Cancel invite for ${escapeHTML(inv.name)}">&#x2715;</button>` : ''}
     </div>
-  `).join('');
+  `;
+  }).join('');
 
   tabsEl.innerHTML = confirmedTabs + pendingTabs +
     `<button class="add-person-tab-btn" id="add-person-btn">+ Invite</button>`;
@@ -201,7 +204,12 @@ function pipelineCardHTML(task, editMode, editingTaskId) {
 function renderPendingPanel(invite) {
   return `
     <div class="pending-invite-panel">
-      <div class="pending-invite-icon">✉️</div>
+      <div class="pending-invite-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" width="44" height="44">
+          <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/>
+          <polyline points="22,6 12,13 2,6"/>
+        </svg>
+      </div>
       <p class="pending-invite-name">${escapeHTML(invite.name)}</p>
       <p class="pending-invite-email">${escapeHTML(invite.email)}</p>
       <p class="pending-invite-status">Invite sent — waiting for them to join</p>
