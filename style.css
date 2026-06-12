@@ -359,14 +359,6 @@ body::before {
 .stat-chip-dot--done    { background: var(--success); }
 .stat-chip-dot--overdue { background: var(--danger); }
 
-.transcript-box {
-  width: 100%; background: white; border-radius: var(--radius-card);
-  padding: 16px 20px; min-height: 60px;
-  box-shadow: var(--shadow-card);
-  display: flex; align-items: center; justify-content: center;
-}
-.transcript-box p { font-size: 15px; color: var(--muted); line-height: 1.5; text-align: center; }
-
 /* Mic dock — floating hero mic above tab bar */
 .mic-dock {
   position: absolute;
@@ -913,7 +905,9 @@ body::before {
   transition: transform 0.1s;
 }
 .voice-overlay-stop:active { transform: scale(0.96); }
-.voice-overlay-hint { color: rgba(255,255,255,0.65); font-size: 12px; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase; }
+.voice-overlay-hint { color: rgba(255,255,255,0.65); font-size: 12px; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase; min-height: 15px; }
+
+.voice-overlay-result { width: 100%; max-width: 420px; animation: fade-in 0.25s ease; }
 
 /* ─── Toast ──────────────────────────────────────────────────────────── */
 .toast {

@@ -101,12 +101,11 @@ function renderHomePage(tasks, nameMap = {}) {
     <span class="stat-chip"><span class="stat-chip-dot stat-chip-dot--overdue"></span>Overdue ${overdueCount}</span>
   `;
 
-  // Overdue + due-today tasks, soonest first
-  const todayTasks = sortByDateTime(tasks.filter(t => {
-    const s = getComputedStatus(t);
-    if (s === 'overdue') return true;
-    return s === 'pending' && formatDate(t.dueDate) === 'Today';
-  }), 'asc');
+  // Only tasks due today and still pending — done/overdue live on the Tasks page
+  const todayTasks = sortByDateTime(
+    tasks.filter(t => getComputedStatus(t) === 'pending' && formatDate(t.dueDate) === 'Today'),
+    'asc'
+  );
 
   listEl.innerHTML = todayTasks.length
     ? `<div class="card-list">${todayTasks.map(t => taskCardHTML(t, nameMap)).join('')}</div>`

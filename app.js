@@ -350,6 +350,47 @@ const App = {
     }
   },
 
+  // phase: 'listening' | 'processing' | 'saved'
+  _setVoiceOverlayPhase(phase) {
+    const mic    = document.getElementById('voice-overlay-mic');
+    const eq     = document.getElementById('voice-overlay-eq');
+    const stop   = document.getElementById('voice-overlay-stop');
+    const hint   = document.getElementById('voice-overlay-hint');
+    const text   = document.getElementById('voice-overlay-text');
+    const result = document.getElementById('voice-overlay-result');
+    if (!mic) return;
+    const listening = phase === 'listening';
+    mic.classList.toggle('hidden',    phase === 'saved');
+    eq?.classList.toggle('hidden',    !listening);
+    stop?.classList.toggle('hidden',  !listening);
+    text?.classList.toggle('hidden',  phase === 'saved');
+    result?.classList.toggle('hidden', phase !== 'saved');
+    if (hint) hint.textContent = phase === 'processing' ? 'Saving…' : listening ? 'Listening…' : '';
+  },
+
+  _showVoiceOverlayResult(tasks) {
+    const result = document.getElementById('voice-overlay-result');
+    if (!result) return;
+    result.innerHTML = `
+      <p class="preview-label">✓ ${tasks.length > 1 ? tasks.length + ' tasks saved' : 'Task saved'}</p>
+      ${tasks.map(t => `
+        <div class="preview-item">
+          <p class="preview-desc">${escapeHTML(t.description)}</p>
+          <div class="preview-meta">
+            <span class="chip chip--assignee">${escapeHTML(t.assignee)}</span>
+            ${t.dueDate ? `<span class="chip chip--date">${formatDate(t.dueDate)}${t.time ? ' · ' + formatTime(t.time) : ''}</span>` : ''}
+          </div>
+        </div>
+      `).join('')}
+    `;
+    this._setVoiceOverlayPhase('saved');
+    clearTimeout(this._overlayCloseTimer);
+    this._overlayCloseTimer = setTimeout(() => {
+      this._showVoiceOverlay(false);
+      this._setVoiceOverlayPhase('listening');
+    }, 2800);
+  },
+
   _bindVoiceEvents() {
     document.getElementById('voice-overlay-stop')?.addEventListener('click', () => {
       this.voice?.stop();
@@ -360,30 +401,26 @@ const App = {
         this._setPipelineFABState('listening');
       } else {
         this._setMicState('listening');
+        clearTimeout(this._overlayCloseTimer);
+        this._setVoiceOverlayPhase('listening');
         this._showVoiceOverlay(true, 'Listening…');
-        const tt = document.getElementById('transcript-text');
-        if (tt) tt.textContent = 'Listening…';
-        document.getElementById('task-preview')?.classList.add('hidden');
       }
     });
 
     document.addEventListener('voice:interim', e => {
       if (this.state.voiceContext === 'fab') return;
       if (e.detail) this._showVoiceOverlay(true, `“${e.detail}”`);
-      const tt = document.getElementById('transcript-text');
-      if (tt && e.detail) tt.textContent = e.detail;
     });
 
     document.addEventListener('voice:result', async e => {
       const transcript = e.detail;
       const isFAB = this.state.voiceContext === 'fab';
       this.state.voiceContext = 'general';
-      this._showVoiceOverlay(false);
 
       if (!isFAB) {
-        const tt = document.getElementById('transcript-text');
-        if (tt) tt.textContent = transcript;
         this._setMicState('processing');
+        this._showVoiceOverlay(true, `“${transcript}”`);
+        this._setVoiceOverlayPhase('processing');
       } else {
         this._setPipelineFABState('processing');
       }
@@ -413,7 +450,7 @@ const App = {
           Notifications.scheduleLocal(task);
         });
 
-        if (!isFAB) this._showPreview(tasks);
+        if (!isFAB) this._showVoiceOverlayResult(tasks);
 
         const activeMember = isFAB ? this.state.team.find(m => m.id === this.state.activePersonId) : null;
         const msg = activeMember
@@ -423,6 +460,8 @@ const App = {
         this._refreshCurrentPage();
         this._updatePipelineBadge();
       } catch (err) {
+        this._showVoiceOverlay(false);
+        this._setVoiceOverlayPhase('listening');
         this.showToast(err.message || 'Could not parse task. Try again.', true);
       } finally {
         this._setMicState('idle');
@@ -433,6 +472,7 @@ const App = {
     document.addEventListener('voice:error', e => {
       this.state.voiceContext = 'general';
       this._showVoiceOverlay(false);
+      this._setVoiceOverlayPhase('listening');
       this.showToast(e.detail, true);
       this._setMicState('idle');
       this._setPipelineFABState('idle');
@@ -440,8 +480,12 @@ const App = {
 
     document.addEventListener('voice:end', () => {
       if (this.state.voiceContext === 'fab') return;
-      this._showVoiceOverlay(false);
-      if (!this.voice._transcript?.trim()) this._setMicState('idle');
+      // Only dismiss if nothing was said — otherwise the overlay stays up
+      // through the processing/saved phases
+      if (!this.voice._transcript?.trim()) {
+        this._showVoiceOverlay(false);
+        this._setMicState('idle');
+      }
     });
   },
 
@@ -1079,24 +1123,6 @@ const App = {
   },
 
   // ── Preview card ───────────────────────────────────────────────────────────
-  _showPreview(tasks) {
-    const el = document.getElementById('task-preview');
-    if (!el) return;
-    el.innerHTML = `
-      <p class="preview-label">${tasks.length > 1 ? tasks.length + ' tasks saved' : 'Task saved'}</p>
-      ${tasks.map(t => `
-        <div class="preview-item">
-          <p class="preview-desc">${escapeHTML(t.description)}</p>
-          <div class="preview-meta">
-            <span class="chip chip--assignee">${escapeHTML(t.assignee)}</span>
-            ${t.dueDate ? `<span class="chip chip--date">${formatDate(t.dueDate)}</span>` : ''}
-          </div>
-        </div>
-      `).join('')}
-    `;
-    el.classList.remove('hidden');
-  },
-
   // ── Toast ──────────────────────────────────────────────────────────────────
   showToast(msg, isError = false, undoFn = null) {
     const toast = document.getElementById('toast');
@@ -1274,8 +1300,13 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function applyLayout() {
-    // CSS anchors all screens to var(--real-height); env() handles safe areas
-    root.style.setProperty('--real-height', `${window.innerHeight}px`);
+    // CSS anchors all screens to var(--real-height); env() handles safe areas.
+    // In iOS standalone (home-screen) mode window.innerHeight excludes the
+    // safe-area zones even though the webview is fullscreen — screen.height
+    // is the truthful value there.
+    const standalone = navigator.standalone === true || matchMedia('(display-mode: standalone)').matches;
+    const h = standalone ? Math.max(window.innerHeight, screen.height) : window.innerHeight;
+    root.style.setProperty('--real-height', `${h}px`);
     root.style.setProperty('--safe-bottom-px', `${measureSafeBottom()}px`);
   }
 

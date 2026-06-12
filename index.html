@@ -130,10 +130,6 @@
       </header>
       <main class="home-main">
         <div id="home-chips" class="summary-chips"></div>
-        <div id="transcript-box" class="transcript-box hidden">
-          <p id="transcript-text">Listening…</p>
-        </div>
-        <div id="task-preview" class="task-preview hidden"></div>
         <div id="home-tasks"></div>
       </main>
       <div class="mic-dock">
@@ -261,7 +257,7 @@
 
 <!-- ── Voice capture overlay ──────────────────────────────────────────── -->
 <div id="voice-overlay" class="voice-overlay hidden">
-  <div class="voice-overlay-mic">
+  <div id="voice-overlay-mic" class="voice-overlay-mic">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
       <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
       <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
@@ -270,12 +266,13 @@
     </svg>
   </div>
   <p id="voice-overlay-text" class="voice-overlay-text">Listening…</p>
-  <div class="voice-eq"><span></span><span></span><span></span><span></span><span></span></div>
+  <div id="voice-overlay-eq" class="voice-eq"><span></span><span></span><span></span><span></span><span></span></div>
+  <div id="voice-overlay-result" class="task-preview voice-overlay-result hidden"></div>
   <button id="voice-overlay-stop" class="voice-overlay-stop" type="button">
     <svg viewBox="0 0 24 24" fill="currentColor" width="14" height="14"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>
     Stop
   </button>
-  <p class="voice-overlay-hint">Listening…</p>
+  <p id="voice-overlay-hint" class="voice-overlay-hint">Listening…</p>
 </div>
 
 <!-- ── Global toast ───────────────────────────────────────────────────── -->
