@@ -135,7 +135,9 @@ const Sync = {
         if (!res.ok) {
           const errBody = await res.text().catch(() => '');
           console.error('[Sync] upsert failed:', res.status, errBody);
-          throw new Error('Upsert failed');
+          let detail = '';
+          try { detail = JSON.parse(errBody).message || ''; } catch {}
+          throw new Error(`Save failed (${res.status})${detail ? ': ' + detail : ''}`);
         }
       }
 
@@ -152,8 +154,9 @@ const Sync = {
 
       this._lastFlushAt = Date.now();
       this._dispatch('sync:ok');
-    } catch {
+    } catch (err) {
       this._dispatch('sync:error');
+      if (typeof App !== 'undefined') App.showToast?.(err.message || 'Sync failed — changes not saved', true);
     }
   },
 
