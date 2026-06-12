@@ -1,0 +1,9 @@
+const CONFIG = {
+  GROQ_API_KEY:     'YOUR_GROQ_API_KEY',
+  GROQ_MODEL:       'llama-3.3-70b-versatile',
+  STORAGE_KEY:      'vtm_tasks',
+  SUPABASE_URL:     'YOUR_SUPABASE_URL',
+  SUPABASE_ANON_KEY:'YOUR_SUPABASE_ANON_KEY',
+  VAPID_PUBLIC_KEY: 'YOUR_VAPID_PUBLIC_KEY',
+  APP_URL: 'http://localhost:3000/'
+};
