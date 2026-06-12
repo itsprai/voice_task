@@ -77,44 +77,95 @@ function escapeHTML(str) {
     .replace(/"/g,'&quot;');
 }
 
-// ── Tasks page renderer (assigner: all tasks flat list) ───────────────────────
+// ── Home page renderer (assigner: summary chips + today's tasks) ──────────────
+
+function renderHomePage(tasks, nameMap = {}) {
+  const chipsEl = document.getElementById('home-chips');
+  const listEl  = document.getElementById('home-tasks');
+  const dateEl  = document.getElementById('home-date');
+
+  if (dateEl) {
+    dateEl.textContent = new Date().toLocaleDateString('en-US', {
+      weekday: 'long', month: 'long', day: 'numeric'
+    });
+  }
+  if (!chipsEl || !listEl) return;
+
+  const pendingCount = tasks.filter(t => ['pending', 'future'].includes(getComputedStatus(t))).length;
+  const doneCount    = tasks.filter(t => getComputedStatus(t) === 'completed').length;
+  const overdueCount = tasks.filter(t => getComputedStatus(t) === 'overdue').length;
+
+  chipsEl.innerHTML = `
+    <span class="stat-chip"><span class="stat-chip-dot stat-chip-dot--pending"></span>Pending ${pendingCount}</span>
+    <span class="stat-chip"><span class="stat-chip-dot stat-chip-dot--done"></span>Done ${doneCount}</span>
+    <span class="stat-chip"><span class="stat-chip-dot stat-chip-dot--overdue"></span>Overdue ${overdueCount}</span>
+  `;
+
+  // Overdue + due-today tasks, soonest first
+  const todayTasks = sortByDateTime(tasks.filter(t => {
+    const s = getComputedStatus(t);
+    if (s === 'overdue') return true;
+    return s === 'pending' && formatDate(t.dueDate) === 'Today';
+  }), 'asc');
+
+  listEl.innerHTML = todayTasks.length
+    ? `<div class="card-list">${todayTasks.map(t => taskCardHTML(t, nameMap)).join('')}</div>`
+    : `<div class="empty-section">Nothing due today — tap the mic to assign a task</div>`;
+}
+
+// ── Tasks page renderer (assigner: segmented filter + grouped by person) ──────
 
 function renderTaskPage(tasks, nameMap = {}) {
   const main = document.getElementById('tasks-main');
   if (!main) return;
 
-  const overdue = sortByDateTime(tasks.filter(t => getComputedStatus(t) === 'overdue'),    'asc');
-  const pending = sortByDateTime(tasks.filter(t => getComputedStatus(t) === 'pending'),    'asc');
-  const future  = sortByDateTime(tasks.filter(t => getComputedStatus(t) === 'future'),     'asc');
-  const done    = sortByDateTime(tasks.filter(t => getComputedStatus(t) === 'completed'),  'desc');
+  const filter = (typeof App !== 'undefined' && App.state.taskFilter) || 'all';
 
-  main.innerHTML = `
-    ${overdue.length ? taskSection('Overdue',   overdue, '#ef4444', nameMap) : ''}
-    ${taskSection('Pending',   pending, '#f59e0b', nameMap)}
-    ${taskSection('Upcoming',  future,  '#6366f1', nameMap)}
-    ${taskSection('Completed', done,    '#10b981', nameMap)}
-  `;
-}
+  const filtered = tasks.filter(t => {
+    const done = getComputedStatus(t) === 'completed';
+    if (filter === 'pending') return !done;
+    if (filter === 'done')    return done;
+    return true;
+  });
 
-function taskSection(title, tasks, color, nameMap = {}) {
-  return `
-    <div class="task-section">
-      <div class="section-header">
-        <span class="section-dot" style="background:${color}"></span>
-        <span class="section-title">${title}</span>
-        <span class="section-count">${tasks.length}</span>
-      </div>
-      <div class="section-body">
-        ${tasks.length
-          ? tasks.map(t => taskCardHTML(t, nameMap)).join('')
-          : `<div class="empty-section">No ${title.toLowerCase()} tasks</div>`}
-      </div>
+  const segmented = `
+    <div class="segmented" id="task-segmented">
+      ${[['all', 'All'], ['pending', 'Pending'], ['done', 'Done']].map(([key, label]) =>
+        `<button class="seg-btn ${filter === key ? 'seg-btn--active' : ''}" data-filter="${key}">${label}</button>`
+      ).join('')}
     </div>
   `;
+
+  // Group by person
+  const groups = new Map();
+  for (const t of filtered) {
+    const name = nameMap[t.assignee_id] || t.assignee || 'Unassigned';
+    if (!groups.has(name)) groups.set(name, []);
+    groups.get(name).push(t);
+  }
+
+  const body = groups.size
+    ? [...groups.entries()]
+        .sort((a, b) => a[0].localeCompare(b[0]))
+        .map(([name, list]) => `
+          <div class="person-group">
+            <div class="person-group-header">
+              <span class="avatar">${escapeHTML(name.trim()[0]?.toUpperCase() || '?')}</span>
+              <span class="person-group-name">${escapeHTML(name)}</span>
+              <span class="person-group-count">${list.length}</span>
+            </div>
+            <div class="card-list">
+              ${sortByDateTime(list, 'asc').map(t => taskCardHTML(t, nameMap, { hideAssignee: true })).join('')}
+            </div>
+          </div>
+        `).join('')
+    : `<div class="empty-section">No ${filter === 'all' ? '' : filter + ' '}tasks yet</div>`;
+
+  main.innerHTML = segmented + body;
 }
 
 // nameMap: { [profile_id]: full_name } — used to display assigner/assignee names
-function taskCardHTML(task, nameMap = {}) {
+function taskCardHTML(task, nameMap = {}, opts = {}) {
   const status      = getComputedStatus(task);
   const isCompleted = status === 'completed';
   const isOverdue   = status === 'overdue';
@@ -125,8 +176,9 @@ function taskCardHTML(task, nameMap = {}) {
   const cardClass = isCompleted ? 'task-card--done' : isOverdue ? 'task-card--overdue' : '';
   const dateClass = isToday ? 'task-date--today' : isOverdue ? 'task-date--overdue' : '';
 
-  const displayName = nameMap[task.assignee_id] || task.assignee || '';
+  const displayName = opts.hideAssignee ? '' : (nameMap[task.assignee_id] || task.assignee || '');
   const selfAdded   = task.added_by && task.added_by === task.assignee_id;
+  const metaParts   = [displayName, dateTime].filter(Boolean);
 
   return `
     <div class="task-card ${cardClass}">
@@ -134,9 +186,8 @@ function taskCardHTML(task, nameMap = {}) {
         ${isCompleted ? `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>` : ''}
       </button>
       <div class="task-body">
-        ${displayName ? `<div class="task-assignee">${escapeHTML(displayName)}</div>` : ''}
         <div class="task-desc ${isCompleted ? 'task-desc--done' : ''}">${escapeHTML(task.description)}</div>
-        ${dateTime ? `<div class="task-date ${dateClass}">${dateTime}</div>` : ''}
+        ${metaParts.length ? `<div class="task-date ${dateClass}">${metaParts.map(escapeHTML).join(' · ')}</div>` : ''}
         ${selfAdded ? `<div class="task-self-added">Added by assignee</div>` : ''}
       </div>
       <button class="delete-btn" data-id="${task.id}" aria-label="Delete">&#x2715;</button>

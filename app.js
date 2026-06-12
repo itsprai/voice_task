@@ -25,9 +25,11 @@ const App = {
       try { return JSON.parse(localStorage.getItem('vtm_v2_pinned') || '[]'); } catch { return []; }
     })(),
     currentPage: 'home',
+    taskFilter: 'all',
     voiceContext: 'general',
     // Assignee-specific
     assigners:     [],   // [{ id, full_name }]
+    activeAssignerId: null,
     editingAssigneeTaskId: null,
     showAssigneeAddForm: false,
     // Invite token from URL (set before auth resolves)
@@ -47,6 +49,16 @@ const App = {
     // Auth listener fires for SIGNED_IN (magic link callback) and SIGNED_OUT
     document.addEventListener('auth:signed-in',  () => this._onSignedIn());
     document.addEventListener('auth:signed-out', () => this._onSignedOut());
+
+    // Sign out buttons (both roles) — switch screens immediately, don't wait
+    // for the auth event
+    ['assigner-signout-btn', 'assignee-signout-btn'].forEach(id => {
+      document.getElementById(id)?.addEventListener('click', async () => {
+        if (!confirm('Sign out?')) return;
+        try { await Auth.signOut(); } catch (e) { console.warn('Sign out error:', e); }
+        this._showScreen('auth');
+      });
+    });
 
     const session = await Auth.init();
 
@@ -238,6 +250,7 @@ const App = {
     this.state.currentPage = page;
     localStorage.setItem('vtm_v2_page', page);
 
+    if (page === 'home')  renderHomePage(this.state.tasks, this.state.nameMap);
     if (page === 'tasks') renderTaskPage(this.state.tasks, this.state.nameMap);
 
     if (page === 'pipeline') {
@@ -308,13 +321,27 @@ const App = {
   },
 
   // ── Voice events ───────────────────────────────────────────────────────────
+  _showVoiceOverlay(show, text) {
+    const overlay = document.getElementById('voice-overlay');
+    if (!overlay) return;
+    overlay.classList.toggle('hidden', !show);
+    if (text !== undefined) {
+      const t = document.getElementById('voice-overlay-text');
+      if (t) t.textContent = text;
+    }
+  },
+
   _bindVoiceEvents() {
+    document.getElementById('voice-overlay-stop')?.addEventListener('click', () => {
+      this.voice?.stop();
+    });
+
     document.addEventListener('voice:start', () => {
       if (this.state.voiceContext === 'fab') {
         this._setPipelineFABState('listening');
       } else {
         this._setMicState('listening');
-        document.getElementById('transcript-box')?.classList.remove('hidden');
+        this._showVoiceOverlay(true, 'Listening…');
         const tt = document.getElementById('transcript-text');
         if (tt) tt.textContent = 'Listening…';
         document.getElementById('task-preview')?.classList.add('hidden');
@@ -323,6 +350,7 @@ const App = {
 
     document.addEventListener('voice:interim', e => {
       if (this.state.voiceContext === 'fab') return;
+      if (e.detail) this._showVoiceOverlay(true, `“${e.detail}”`);
       const tt = document.getElementById('transcript-text');
       if (tt && e.detail) tt.textContent = e.detail;
     });
@@ -331,6 +359,7 @@ const App = {
       const transcript = e.detail;
       const isFAB = this.state.voiceContext === 'fab';
       this.state.voiceContext = 'general';
+      this._showVoiceOverlay(false);
 
       if (!isFAB) {
         const tt = document.getElementById('transcript-text');
@@ -384,6 +413,7 @@ const App = {
 
     document.addEventListener('voice:error', e => {
       this.state.voiceContext = 'general';
+      this._showVoiceOverlay(false);
       this.showToast(e.detail, true);
       this._setMicState('idle');
       this._setPipelineFABState('idle');
@@ -391,6 +421,7 @@ const App = {
 
     document.addEventListener('voice:end', () => {
       if (this.state.voiceContext === 'fab') return;
+      this._showVoiceOverlay(false);
       if (!this.voice._transcript?.trim()) this._setMicState('idle');
     });
   },
@@ -410,11 +441,18 @@ const App = {
     el.title = { syncing: 'Syncing…', ok: 'Synced', error: 'Sync failed — cached data shown' }[status] || '';
   },
 
-  // ── Tasks page events ──────────────────────────────────────────────────────
+  // ── Tasks page + Home list events ──────────────────────────────────────────
   _bindTaskEvents() {
-    document.getElementById('tasks-main')?.addEventListener('click', e => {
+    const handler = e => {
+      const seg    = e.target.closest('.seg-btn');
       const check  = e.target.closest('.check-btn');
       const remove = e.target.closest('.delete-btn');
+
+      if (seg) {
+        this.state.taskFilter = seg.dataset.filter;
+        renderTaskPage(this.state.tasks, this.state.nameMap);
+        return;
+      }
 
       if (check) {
         const task = this.state.tasks.find(t => t.id === check.dataset.id);
@@ -423,7 +461,7 @@ const App = {
           this.state.tasks = Storage.update(task.id, { status: next });
           if (next === 'completed') Notifications.cancelLocal(task.id);
           else Notifications.scheduleLocal({ ...task, status: 'pending' });
-          renderTaskPage(this.state.tasks, this.state.nameMap);
+          this._refreshCurrentPage();
         }
       }
 
@@ -438,8 +476,7 @@ const App = {
           () => {
             Notifications.cancelLocal(taskId);
             this.state.tasks = Storage.removeLocal(taskId);
-            renderTaskPage(this.state.tasks, this.state.nameMap);
-            this._updatePipelineBadge();
+            this._refreshCurrentPage();
             syncHandle.timer = setTimeout(() => { Sync.deleteRemote(taskId); Sync.push(this.state.tasks); }, 4500);
           },
           () => {
@@ -447,12 +484,14 @@ const App = {
             this.state.tasks = tasksCopy;
             localStorage.setItem(CONFIG.STORAGE_KEY, JSON.stringify(tasksCopy));
             Notifications.scheduleLocal(taskToDelete);
-            renderTaskPage(this.state.tasks, this.state.nameMap);
-            this._updatePipelineBadge();
+            this._refreshCurrentPage();
           }
         );
       }
-    });
+    };
+
+    document.getElementById('tasks-main')?.addEventListener('click', handler);
+    document.getElementById('home-tasks')?.addEventListener('click', handler);
   },
 
   // ── Pipeline events ────────────────────────────────────────────────────────
@@ -545,6 +584,11 @@ const App = {
 
     // Invite form submission (+ Add Person area)
     document.getElementById('add-person-area')?.addEventListener('click', async e => {
+      if (e.target.closest('[data-close-sheet]')) {
+        this.state.showAddPerson = false;
+        this._renderPipeline();
+        return;
+      }
       const submitBtn = e.target.closest('#invite-submit');
       if (!submitBtn) return;
 
@@ -767,10 +811,18 @@ const App = {
     const formSlot = document.getElementById('assignee-add-form-slot');
 
     main.addEventListener('click', e => {
+      const mgrTab   = e.target.closest('.person-tab[data-assigner-id]');
       const checkBtn = e.target.closest('.check-btn');
       const editBtn  = e.target.closest('.assignee-edit-btn');
       const saveBtn  = e.target.closest('.pipeline-edit-save');
       const cancelBtn = e.target.closest('.pipeline-edit-cancel');
+
+      if (mgrTab) {
+        this.state.activeAssignerId = mgrTab.dataset.assignerId;
+        this.state.editingAssigneeTaskId = null;
+        renderAssigneeTasksPage(this.state.tasks, this.state.assigners, null);
+        return;
+      }
 
       if (checkBtn) {
         const task = this.state.tasks.find(t => t.id === checkBtn.dataset.id);
@@ -815,21 +867,26 @@ const App = {
       this.state.showAssigneeAddForm = !this.state.showAssigneeAddForm;
       if (formSlot) {
         formSlot.innerHTML = this.state.showAssigneeAddForm
-          ? renderAssigneeAddTaskForm(this.state.assigners)
+          ? renderAssigneeAddTaskForm(this.state.assigners, this.state.activeAssignerId)
           : '';
       }
     });
 
     document.getElementById('assignee-app')?.addEventListener('click', async e => {
+      if (e.target.closest('[data-close-sheet]')) {
+        this.state.showAssigneeAddForm = false;
+        const slot = document.getElementById('assignee-add-form-slot');
+        if (slot) slot.innerHTML = '';
+        return;
+      }
       const submitBtn = e.target.closest('#add-assignee-task-submit');
       if (!submitBtn) return;
 
-      const assignerSelect = document.getElementById('add-assignee-task-for');
-      const descInput      = document.getElementById('add-assignee-task-desc');
-      const dateInput      = document.getElementById('add-assignee-task-date');
-      const timeInput      = document.getElementById('add-assignee-task-time');
+      const descInput = document.getElementById('add-assignee-task-desc');
+      const dateInput = document.getElementById('add-assignee-task-date');
+      const timeInput = document.getElementById('add-assignee-task-time');
 
-      const assignerId = assignerSelect?.value;
+      const assignerId = submitBtn.dataset.assignerId;
       const desc       = descInput?.value.trim();
       if (!desc || !assignerId) { descInput?.focus(); return; }
 
@@ -869,19 +926,12 @@ const App = {
         btn.classList.add('nav-btn--active');
       });
     });
-
-    // Sign out button
-    document.getElementById('assignee-signout-btn')?.addEventListener('click', async () => {
-      if (confirm('Sign out?')) await Auth.signOut();
-    });
-    document.getElementById('assigner-signout-btn')?.addEventListener('click', async () => {
-      if (confirm('Sign out?')) await Auth.signOut();
-    });
   },
 
   // ── Page refresh helpers ───────────────────────────────────────────────────
   _refreshCurrentPage() {
     if (Auth.profile?.role === 'assigner') {
+      if (this.state.currentPage === 'home')     renderHomePage(this.state.tasks, this.state.nameMap);
       if (this.state.currentPage === 'tasks')    renderTaskPage(this.state.tasks, this.state.nameMap);
       if (this.state.currentPage === 'pipeline') this._renderPipeline();
       this._updatePipelineBadge();
@@ -1049,42 +1099,30 @@ const App = {
     }
   },
 
-  // ── Notification toggle banner ─────────────────────────────────────────────
+  // ── Notification bell (home header) ────────────────────────────────────────
   async _initNotifBanner() {
-    const row = document.getElementById('notif-toggle-row');
-    const sub = document.getElementById('notif-toggle-sub');
-    const btn = document.getElementById('notif-toggle-btn');
-    if (!row || !btn) return;
+    const btn = document.getElementById('notif-bell-btn');
+    if (!btn) return;
 
     const isStandalone = navigator.standalone === true || matchMedia('(display-mode: standalone)').matches;
     const isIOS  = /iPad|iPhone|iPod/.test(navigator.userAgent);
     const hasAPI = 'Notification' in window;
 
-    if (isIOS && !isStandalone) {
-      row.classList.remove('hidden');
-      row.classList.add('notif-toggle-row--disabled');
-      if (sub) sub.textContent = '📲 Add to Home Screen to enable';
-      btn.disabled = true;
+    const setOn  = () => { btn.classList.add('notif-bell--on');    btn.title = 'Notifications on — tap to disable'; };
+    const setOff = () => { btn.classList.remove('notif-bell--on'); btn.title = 'Enable notifications'; };
+
+    if ((isIOS && !isStandalone) || !hasAPI) {
+      btn.addEventListener('click', () => {
+        this.showToast(isIOS ? 'Add to Home Screen to enable notifications' : 'Notifications not supported in this browser', true);
+      });
       return;
     }
-    if (!hasAPI) {
-      row.classList.remove('hidden');
-      row.classList.add('notif-toggle-row--disabled');
-      if (sub) sub.textContent = '⚠️ Not supported in this browser';
-      btn.disabled = true;
-      return;
-    }
-
-    row.classList.remove('hidden');
-    const setOn  = () => { btn.textContent = 'Enabled'; btn.classList.add('notif-toggle-btn--on'); if (sub) sub.textContent = 'You will be notified before tasks are due'; };
-    const setOff = () => { btn.textContent = 'Enable'; btn.classList.remove('notif-toggle-btn--on'); if (sub) sub.textContent = 'Tap to get reminded before tasks are due'; };
-
     const subscribed = Notification.permission === 'granted' && await Notifications.isSubscribed();
     if (subscribed) setOn();
 
     btn.addEventListener('click', () => {
       if (Notification.permission === 'denied') { this.showToast('Enable notifications in your browser settings'); return; }
-      if (btn.classList.contains('notif-toggle-btn--on')) {
+      if (btn.classList.contains('notif-bell--on')) {
         Notifications.unsubscribe().then(() => { setOff(); this.showToast('Notifications disabled'); });
         return;
       }
@@ -1094,7 +1132,7 @@ const App = {
       }
       Notification.requestPermission().then(async result => {
         if (result === 'granted') { await Notifications._subscribePush(); setOn(); this.showToast('Notifications enabled'); }
-        else if (result === 'denied') { setOff(); btn.disabled = true; }
+        else if (result === 'denied') { this.showToast('Notifications blocked in browser settings', true); }
       });
     });
   }

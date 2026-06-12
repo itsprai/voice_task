@@ -43,11 +43,12 @@ function renderPipelinePage(tasks, activePersonId, editMode, showAddPerson, pinn
            <path d="M16 9V4h1c.55 0 1-.45 1-1s-.45-1-1-1H7c-.55 0-1 .45-1 1s.45 1 1 1h1v5c0 1.66-1.34 3-3 3v2h5.97v7l1 1 1-1v-7H18v-2c-1.66 0-3-1.34-3-3z"/>
          </svg>`
       : '';
+    const initial = escapeHTML(member.full_name.trim()[0]?.toUpperCase() || '?');
     return `
       <div class="tab-wrapper">
         <button class="person-tab ${member.id === personId ? 'person-tab--active' : ''}"
                 data-person-id="${member.id}">
-          ${pinIcon}${escapeHTML(member.full_name)}
+          <span class="tab-avatar">${initial}</span>${pinIcon}${escapeHTML(member.full_name)}
         </button>
         ${editMode ? `<button class="tab-delete-btn" data-person-id="${member.id}" aria-label="Remove ${escapeHTML(member.full_name)}">&#x2715;</button>` : ''}
       </div>
@@ -212,14 +213,16 @@ function renderPendingPanel(invite) {
   `;
 }
 
-// ── Invite form (between tabs and main, shown when showAddPerson=true) ─────────
+// ── Invite bottom sheet (shown when showAddPerson=true) ────────────────────────
 function renderInviteForm(show) {
   if (!show) return '';
   return `
-    <div class="add-person-form">
-      <p class="add-task-title">Invite New Person</p>
-      <input type="text"  id="invite-name"  class="add-task-input" placeholder="Their name…"  autocomplete="off"/>
-      <input type="email" id="invite-email" class="add-task-input" placeholder="Their email…" autocomplete="off" inputmode="email"/>
+    <div class="sheet-backdrop" data-close-sheet></div>
+    <div class="sheet add-person-form">
+      <div class="sheet-grabber"></div>
+      <p class="sheet-title">Invite team member</p>
+      <input type="text"  id="invite-name"  class="add-task-input" placeholder="Name"  autocomplete="off"/>
+      <input type="email" id="invite-email" class="add-task-input" placeholder="Email" autocomplete="off" inputmode="email"/>
       <button id="invite-submit" class="add-task-btn">Send Invite</button>
       <div id="invite-result" class="invite-result hidden"></div>
     </div>

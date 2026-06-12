@@ -7,7 +7,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="TaskVoice">
   <meta name="mobile-web-app-capable" content="yes">
-  <meta name="theme-color" content="#ffffff">
+  <meta name="theme-color" content="#f4f6fa">
   <link rel="manifest" href="manifest.json">
   <title>TaskVoice</title>
   <link rel="stylesheet" href="style.css">
@@ -29,7 +29,7 @@
     </div>
     <h1 class="auth-app-name">TaskVoice</h1>
     <p id="auth-title" class="auth-title">Sign in to continue</p>
-    <p id="auth-subtitle" class="auth-subtitle">We'll email you a 6-digit code — no password needed.</p>
+    <p id="auth-subtitle" class="auth-subtitle"></p>
 
     <div id="auth-form-wrap">
       <form id="auth-form" class="auth-form">
@@ -40,7 +40,6 @@
     </div>
 
     <div id="auth-otp-wrap" class="auth-sent hidden">
-      <div class="auth-sent-icon">📬</div>
       <p class="auth-sent-title">Check your email</p>
       <p class="auth-sent-sub">Enter the 6-digit code we sent to <strong id="auth-otp-email"></strong></p>
       <form id="auth-otp-form" class="auth-form">
@@ -109,8 +108,16 @@
     <!-- ── Home page ────────────────────────────────────────────── -->
     <section id="page-home" class="page">
       <header class="page-header">
-        <h1>TaskVoice</h1>
-        <span id="sync-indicator" class="sync-indicator" title="Sync status"></span>
+        <div class="page-header-title">
+          <h1>Today</h1>
+          <p id="home-date" class="page-header-sub"></p>
+        </div>
+        <button id="notif-bell-btn" class="signout-btn" title="Enable notifications">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="18" height="18">
+            <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
+            <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
+          </svg>
+        </button>
         <button id="assigner-signout-btn" class="signout-btn" title="Sign out">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="18" height="18">
             <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
@@ -120,19 +127,14 @@
         </button>
       </header>
       <main class="home-main">
+        <div id="home-chips" class="summary-chips"></div>
         <div id="transcript-box" class="transcript-box hidden">
           <p id="transcript-text">Listening…</p>
         </div>
-        <div id="notif-toggle-row" class="notif-toggle-row hidden">
-          <div class="notif-toggle-info">
-            <span class="notif-toggle-icon">🔔</span>
-            <div>
-              <div class="notif-toggle-label">Notifications</div>
-              <div class="notif-toggle-sub" id="notif-toggle-sub">Get reminded before tasks are due</div>
-            </div>
-          </div>
-          <button id="notif-toggle-btn" class="notif-toggle-btn" type="button">Enable</button>
-        </div>
+        <div id="task-preview" class="task-preview hidden"></div>
+        <div id="home-tasks"></div>
+      </main>
+      <div class="mic-dock">
         <div class="mic-wrapper">
           <button id="mic-btn" class="mic-btn" aria-label="Record task">
             <svg id="mic-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -149,8 +151,7 @@
           <div class="mic-ring"></div>
         </div>
         <p id="mic-label" class="mic-label">Tap to speak a task</p>
-        <div id="task-preview" class="task-preview hidden"></div>
-      </main>
+      </div>
     </section>
 
     <!-- ── Tasks page ────────────────────────────────────────────── -->
@@ -162,7 +163,7 @@
     <!-- ── Pipeline page ─────────────────────────────────────────── -->
     <section id="page-pipeline" class="page">
       <header class="page-header">
-        <h1>Pipeline</h1>
+        <h1>Team</h1>
         <button id="pipeline-pin-btn" class="header-pin-btn" title="Pin people">
           <svg viewBox="0 0 24 24" fill="currentColor" width="18" height="18">
             <path d="M16 9V4h1c.55 0 1-.45 1-1s-.45-1-1-1H7c-.55 0-1 .45-1 1s.45 1 1 1h1v5c0 1.66-1.34 3-3 3v2h5.97v7l1 1 1-1v-7H18v-2c-1.66 0-3-1.34-3-3z"/>
@@ -198,9 +199,9 @@
   <nav id="assigner-nav" class="bottom-nav">
     <button class="nav-btn" data-page="pipeline" style="position:relative">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <rect x="3" y="3" width="7" height="18" rx="1"/><rect x="14" y="3" width="7" height="10" rx="1"/><rect x="14" y="17" width="7" height="4" rx="1"/>
+        <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>
       </svg>
-      Pipeline
+      Team
       <span id="pipeline-badge" class="nav-badge" style="display:none"></span>
     </button>
     <button class="nav-btn" data-page="home">
@@ -254,6 +255,25 @@
       <span id="assignee-badge" class="nav-badge" style="display:none"></span>
     </button>
   </nav>
+</div>
+
+<!-- ── Voice capture overlay ──────────────────────────────────────────── -->
+<div id="voice-overlay" class="voice-overlay hidden">
+  <div class="voice-overlay-mic">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+      <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+      <line x1="12" y1="19" x2="12" y2="23"/>
+      <line x1="8"  y1="23" x2="16" y2="23"/>
+    </svg>
+  </div>
+  <p id="voice-overlay-text" class="voice-overlay-text">Listening…</p>
+  <div class="voice-eq"><span></span><span></span><span></span><span></span><span></span></div>
+  <button id="voice-overlay-stop" class="voice-overlay-stop" type="button">
+    <svg viewBox="0 0 24 24" fill="currentColor" width="14" height="14"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>
+    Stop
+  </button>
+  <p class="voice-overlay-hint">Listening…</p>
 </div>
 
 <!-- ── Global toast ───────────────────────────────────────────────────── -->

@@ -180,13 +180,12 @@ DROP POLICY IF EXISTS "tasks_assignee_insert" ON public.tasks;
 DROP POLICY IF EXISTS "tasks_update"         ON public.tasks;
 DROP POLICY IF EXISTS "tasks_delete"         ON public.tasks;
 
--- SELECT: own tasks only; legacy rows (assigner_id IS NULL) visible during migration
+-- SELECT: only tasks you're part of (as assigner or assignee)
 CREATE POLICY "tasks_visibility" ON public.tasks
   FOR SELECT TO authenticated
   USING (
     assigner_id = auth.uid()
     OR assignee_id = auth.uid()
-    OR assigner_id IS NULL
   );
 
 CREATE POLICY "tasks_assigner_insert" ON public.tasks
@@ -245,9 +244,6 @@ CREATE POLICY "prefs_self" ON public.user_preferences
 --  UPDATE public.tasks
 --    SET assigner_id = 'OWNER_UUID', added_by = 'OWNER_UUID'
 --    WHERE assigner_id IS NULL;
---
---  4. After confirming migration, tighten tasks_visibility by removing
---     the "OR assigner_id IS NULL" clause from the policy above.
 
 
 -- ═══════════════════════════════════════════════════════════════════════════

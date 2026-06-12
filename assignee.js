@@ -20,46 +20,56 @@ function renderAssigneeTasksPage(tasks, assigners, editingTaskId = null) {
     return;
   }
 
-  const myId = Auth.profile?.id;
+  // Active manager tab (mirrors the assigner Team page)
+  const stateActive = typeof App !== 'undefined' ? App.state.activeAssignerId : null;
+  const activeId = assigners.some(a => a.id === stateActive) ? stateActive : assigners[0].id;
+  if (typeof App !== 'undefined') App.state.activeAssignerId = activeId;
+  const active = assigners.find(a => a.id === activeId);
 
-  // Group tasks by assigner_id
-  const tasksByAssigner = {};
-  for (const assigner of assigners) {
-    tasksByAssigner[assigner.id] = [];
-  }
-  for (const task of tasks) {
-    if (tasksByAssigner[task.assigner_id] !== undefined) {
-      tasksByAssigner[task.assigner_id].push(task);
-    }
-  }
-
-  const html = assigners.map(assigner => {
-    const assignerTasks = tasksByAssigner[assigner.id] || [];
-    const pending   = sortByDateTime(assignerTasks.filter(t => getComputedStatus(t) === 'pending'),   'asc');
-    const overdue   = sortByDateTime(assignerTasks.filter(t => getComputedStatus(t) === 'overdue'),   'asc');
-    const future    = sortByDateTime(assignerTasks.filter(t => getComputedStatus(t) === 'future'),    'asc');
-    const done      = sortByDateTime(assignerTasks.filter(t => getComputedStatus(t) === 'completed'), 'desc');
-
-    const sectionHtml = [
-      ...overdue.map(t  => assigneeCardHTML(t, 'overdue',  editingTaskId)),
-      ...pending.map(t  => assigneeCardHTML(t, 'pending',  editingTaskId)),
-      ...future.map(t   => assigneeCardHTML(t, 'future',   editingTaskId)),
-      ...done.map(t     => assigneeCardHTML(t, 'completed', editingTaskId))
-    ].join('') || `<div class="empty-section">No tasks from ${escapeHTML(assigner.full_name)} yet.</div>`;
-
+  const chips = assigners.map(a => {
+    const initial = escapeHTML(a.full_name.trim()[0]?.toUpperCase() || '?');
     return `
-      <div class="assignee-group">
-        <div class="assignee-group-header">
-          <span class="assignee-group-avatar">${escapeHTML(assigner.full_name[0].toUpperCase())}</span>
-          <span class="assignee-group-name">From ${escapeHTML(assigner.full_name)}</span>
-          <span class="assignee-group-count">${assignerTasks.filter(t => t.status !== 'completed').length} pending</span>
-        </div>
-        ${sectionHtml}
-      </div>
+      <button class="person-tab ${a.id === activeId ? 'person-tab--active' : ''}" data-assigner-id="${a.id}">
+        <span class="tab-avatar">${initial}</span>${escapeHTML(a.full_name)}
+      </button>
     `;
   }).join('');
 
-  main.innerHTML = html;
+  // Group active manager's tasks by due status (same as the manager pipeline)
+  const personTasks = tasks.filter(t => t.assigner_id === activeId);
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+
+  const groupOverdue = [], groupToday = [], groupUpcoming = [], groupNoDate = [], groupDone = [];
+  for (const task of personTasks) {
+    if (task.status === 'completed') { groupDone.push(task); continue; }
+    if (!task.dueDate) { groupNoDate.push(task); continue; }
+    const due = new Date(task.dueDate + 'T00:00:00');
+    if (isNaN(due))                            groupNoDate.push(task);
+    else if (due < today)                      groupOverdue.push(task);
+    else if (due.getTime() === today.getTime()) groupToday.push(task);
+    else                                       groupUpcoming.push(task);
+  }
+
+  const section = (label, cls, list, dir = 'asc') => {
+    if (!list.length) return '';
+    return `
+      <div class="pipeline-section-header pipeline-section-header--${cls}">${label}</div>
+      ${sortByDateTime(list, dir).map(t => assigneeCardHTML(t, getComputedStatus(t), editingTaskId)).join('')}
+    `;
+  };
+
+  const sections = [
+    section('Overdue',  'overdue',  groupOverdue),
+    section('Today',    'today',    groupToday),
+    section('Upcoming', 'upcoming', groupUpcoming),
+    section('No Date',  'nodate',   groupNoDate),
+    section('Done',     'done',     groupDone, 'desc')
+  ].join('');
+
+  main.innerHTML = `
+    <div class="pipeline-tabs assignee-tabs">${chips}</div>
+    ${sections || `<div class="empty-section">No tasks from ${escapeHTML(active?.full_name || 'this manager')} yet.</div>`}
+  `;
 }
 
 function assigneeCardHTML(task, computedStatus, editingTaskId) {
@@ -106,32 +116,31 @@ function assigneeCardHTML(task, computedStatus, editingTaskId) {
 }
 
 // ── Add Task form (assignee adds their own task attributed to an assigner) ────
-function renderAssigneeAddTaskForm(assigners) {
+function renderAssigneeAddTaskForm(assigners, activeAssignerId) {
   if (!assigners.length) return `
-    <div class="assignee-add-form">
+    <div class="sheet-backdrop" data-close-sheet></div>
+    <div class="sheet assignee-add-form">
+      <div class="sheet-grabber"></div>
       <p style="color:var(--muted);font-size:14px;text-align:center;padding:12px 0;">
-        No managers linked yet. Ask your manager to share an invite link.
+        No managers linked yet. Ask your manager to invite you.
       </p>
     </div>
   `;
 
-  const options = assigners.map(a =>
-    `<option value="${a.id}">${escapeHTML(a.full_name)}</option>`
-  ).join('');
+  const active = assigners.find(a => a.id === activeAssignerId) || assigners[0];
 
   return `
-    <div class="assignee-add-form" id="assignee-add-form">
-      <p class="add-task-title">Add a task you received</p>
-      <label class="add-task-field-label" for="add-assignee-task-for">From</label>
-      <select id="add-assignee-task-for" class="add-task-input add-task-select">
-        ${options}
-      </select>
+    <div class="sheet-backdrop" data-close-sheet></div>
+    <div class="sheet assignee-add-form" id="assignee-add-form">
+      <div class="sheet-grabber"></div>
+      <p class="sheet-title">Add a task</p>
+      <p class="sheet-context">From <strong>${escapeHTML(active.full_name)}</strong></p>
       <input type="text" id="add-assignee-task-desc" class="add-task-input" placeholder="Task description…" autocomplete="off"/>
       <label class="add-task-field-label" for="add-assignee-task-date">Date</label>
       <input type="date" id="add-assignee-task-date" class="add-task-date"/>
       <label class="add-task-field-label" for="add-assignee-task-time">Time</label>
       <input type="time" id="add-assignee-task-time" class="add-task-date"/>
-      <button id="add-assignee-task-submit" class="add-task-btn">Add Task</button>
+      <button id="add-assignee-task-submit" class="add-task-btn" data-assigner-id="${active.id}">Add Task</button>
     </div>
   `;
 }
