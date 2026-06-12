@@ -11,10 +11,6 @@ const Parser = {
   // team: [{ id, full_name }] — current assigner's confirmed team
   // Returns array of task objects with assignee_id resolved.
   async parse(transcript, team = []) {
-    if (!CONFIG.GROQ_API_KEY || CONFIG.GROQ_API_KEY === 'your_groq_api_key_here') {
-      throw new Error('Please add your Groq API key in config.js');
-    }
-
     const now        = new Date();
     const todayISO   = now.toISOString().split('T')[0];
     const currentTime = now.toTimeString().slice(0, 5);
@@ -48,16 +44,27 @@ Return a JSON object:
 If no task found:
 {"tasks": [], "error": "Could not understand the task. Please speak again."}`;
 
-    const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-      method:  'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${CONFIG.GROQ_API_KEY}` },
-      body: JSON.stringify({
-        model:           CONFIG.GROQ_MODEL,
-        messages:        [{ role: 'system', content: systemPrompt }, { role: 'user', content: transcript }],
-        temperature:     0.1,
-        response_format: { type: 'json_object' }
-      })
+    const payload = JSON.stringify({
+      model:           CONFIG.GROQ_MODEL,
+      messages:        [{ role: 'system', content: systemPrompt }, { role: 'user', content: transcript }],
+      temperature:     0.1,
+      response_format: { type: 'json_object' }
     });
+
+    // Local dev with a key in config.js calls Groq directly;
+    // production goes through the /api/groq proxy so the key never ships to the browser.
+    const useDirect = CONFIG.GROQ_API_KEY && CONFIG.GROQ_API_KEY !== 'YOUR_GROQ_API_KEY';
+    const res = useDirect
+      ? await fetch('https://api.groq.com/openai/v1/chat/completions', {
+          method:  'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${CONFIG.GROQ_API_KEY}` },
+          body: payload
+        })
+      : await fetch('/api/groq', {
+          method:  'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${Auth.token}` },
+          body: payload
+        });
 
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));

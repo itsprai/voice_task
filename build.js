@@ -2,7 +2,7 @@
 const fs = require('fs');
 
 const config = `const CONFIG = {
-  GROQ_API_KEY:     '${process.env.GROQ_API_KEY || ''}',
+  GROQ_API_KEY:     '',
   GROQ_MODEL:       '${process.env.GROQ_MODEL || 'llama-3.3-70b-versatile'}',
   STORAGE_KEY:      'vtm_tasks',
   SUPABASE_URL:     '${process.env.SUPABASE_URL || ''}',
