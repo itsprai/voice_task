@@ -176,6 +176,10 @@ const App = {
       this.state.pendingInviteToken = null;
     }
 
+    // Safety net: accept pending invites matching this user's email even if
+    // the invite token was lost along the way
+    await Invite.acceptAllForEmail();
+
     await this._pullAll();
     Sync.subscribe(() => this._pullAll());
     Notifications.init(this.state.tasks);

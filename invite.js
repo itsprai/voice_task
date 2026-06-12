@@ -86,10 +86,27 @@ const Invite = {
     if (mapErr) throw mapErr;
 
     // 2. Mark invite as accepted
-    await SupabaseClient
+    const { error: updErr } = await SupabaseClient
       .from('invites')
       .update({ status: 'accepted' })
       .eq('id', inviteId);
+    if (updErr) throw updErr;
+  },
+
+  // ── Accept any pending invites addressed to this user's email ─────────────
+  // Safety net for sessions where the invite token was lost (e.g. the user
+  // logged in directly instead of via the invite link).
+  async acceptAllForEmail() {
+    if (!SupabaseClient || !Auth.profile || !Auth.user?.email) return;
+    const { data } = await SupabaseClient
+      .from('invites')
+      .select('id, assigner_id')
+      .eq('email', Auth.user.email.toLowerCase())
+      .eq('status', 'pending');
+    for (const inv of data ?? []) {
+      try { await this.accept(inv.id, inv.assigner_id); }
+      catch (e) { console.warn('Invite auto-accept failed:', e); }
+    }
   },
 
   // ── Check for pending invites for this user's email and auto-accept ───────
