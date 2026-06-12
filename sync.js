@@ -139,12 +139,14 @@ const Sync = {
         }
       }
 
-      // Assigner only: delete remote rows that no longer exist locally
+      // Assigner only: delete remote rows that no longer exist locally.
+      // Scoped to added_by=me so tasks created by assignees (which carry this
+      // assigner's id but aren't in the local list yet) are never wiped.
       if (me.role === 'assigner') {
         const ids = mine.map(t => t.id);
         const deleteUrl = ids.length > 0
-          ? `${CONFIG.SUPABASE_URL}/rest/v1/tasks?id=not.in.(${ids.join(',')})&assigner_id=eq.${me.id}`
-          : `${CONFIG.SUPABASE_URL}/rest/v1/tasks?assigner_id=eq.${me.id}`;
+          ? `${CONFIG.SUPABASE_URL}/rest/v1/tasks?id=not.in.(${ids.join(',')})&assigner_id=eq.${me.id}&added_by=eq.${me.id}`
+          : `${CONFIG.SUPABASE_URL}/rest/v1/tasks?assigner_id=eq.${me.id}&added_by=eq.${me.id}`;
         await fetch(deleteUrl, { method: 'DELETE', headers: this._headers() });
       }
 
@@ -152,6 +154,21 @@ const Sync = {
       this._dispatch('sync:ok');
     } catch {
       this._dispatch('sync:error');
+    }
+  },
+
+  // ── Explicit single-task remote delete ─────────────────────────────────────
+  // Used by the delete-with-undo flow; covers rows the diff-delete can't
+  // (e.g. an assigner removing a task an assignee created).
+  async deleteRemote(id) {
+    if (!this.configured || !id) return;
+    try {
+      await fetch(`${CONFIG.SUPABASE_URL}/rest/v1/tasks?id=eq.${id}`, {
+        method: 'DELETE', headers: this._headers()
+      });
+      this._lastFlushAt = Date.now();
+    } catch (err) {
+      console.warn('[Sync] deleteRemote failed:', err);
     }
   },
 

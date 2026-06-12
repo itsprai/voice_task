@@ -440,7 +440,7 @@ const App = {
             this.state.tasks = Storage.removeLocal(taskId);
             renderTaskPage(this.state.tasks, this.state.nameMap);
             this._updatePipelineBadge();
-            syncHandle.timer = setTimeout(() => Sync.push(this.state.tasks), 4500);
+            syncHandle.timer = setTimeout(() => { Sync.deleteRemote(taskId); Sync.push(this.state.tasks); }, 4500);
           },
           () => {
             clearTimeout(syncHandle.timer);
@@ -692,7 +692,7 @@ const App = {
             this.state.editingTaskId = null;
             this._renderPipeline();
             this._updatePipelineBadge();
-            syncHandle.timer = setTimeout(() => Sync.push(this.state.tasks), 4500);
+            syncHandle.timer = setTimeout(() => { Sync.deleteRemote(taskId); Sync.push(this.state.tasks); }, 4500);
           },
           () => {
             clearTimeout(syncHandle.timer);
