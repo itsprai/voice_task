@@ -117,16 +117,22 @@ const Sync = {
     const all = this._latest ?? [];
     this._dispatch('sync:pending');
     try {
-      // Only push rows this user is allowed to upsert — one RLS-rejected row
-      // would fail the entire batch and nothing would be saved.
       const me = Auth.profile;
       if (!me) { this._dispatch('sync:error'); return; }
       const mine = me.role === 'assigner'
         ? all.filter(t => t.assigner_id === me.id)
         : all.filter(t => t.assignee_id === me.id);
 
-      if (mine.length > 0) {
-        const normalized = mine.map(t => this._normalize(t));
+      // RLS only allows INSERTing rows you created yourself, so the batch
+      // upsert must contain only own rows — one foreign row 403s the whole
+      // batch. Rows created by the other side are synced via per-row PATCH
+      // (UPDATE is allowed on any task you're part of).
+      const isOwn  = t => t.added_by === me.id || (me.role === 'assigner' && !t.added_by);
+      const own    = mine.filter(isOwn);
+      const theirs = mine.filter(t => !isOwn(t));
+
+      if (own.length > 0) {
+        const normalized = own.map(t => this._normalize(t));
         const res = await fetch(`${CONFIG.SUPABASE_URL}/rest/v1/tasks`, {
           method:  'POST',
           headers: { ...this._headers(), 'Prefer': 'resolution=merge-duplicates,return=minimal' },
@@ -139,6 +145,17 @@ const Sync = {
           try { detail = JSON.parse(errBody).message || ''; } catch {}
           throw new Error(`Save failed (${res.status})${detail ? ': ' + detail : ''}`);
         }
+      }
+
+      for (const t of theirs) {
+        const n = this._normalize(t);
+        delete n.id;
+        const res = await fetch(`${CONFIG.SUPABASE_URL}/rest/v1/tasks?id=eq.${t.id}`, {
+          method:  'PATCH',
+          headers: { ...this._headers(), 'Prefer': 'return=minimal' },
+          body:    JSON.stringify(n)
+        });
+        if (!res.ok) console.warn('[Sync] patch failed for task', t.id, res.status);
       }
 
       // Assigner only: delete remote rows that no longer exist locally.
