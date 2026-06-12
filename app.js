@@ -547,10 +547,27 @@ const App = {
       try {
         const { invite, link } = await Invite.create(name, email);
         this.state.pendingInvites.push(invite);
+
+        // Email the invite directly; fall back to manual sharing if it fails
+        let emailSent = false;
+        try {
+          await Invite.sendEmail(invite);
+          emailSent = true;
+        } catch (mailErr) {
+          console.warn('Invite email failed:', mailErr);
+        }
+
         if (resultEl) {
           resultEl.classList.remove('hidden');
-          resultEl.innerHTML = `
-            <p class="invite-result-label">Invite link ready</p>
+          resultEl.innerHTML = emailSent
+            ? `
+            <p class="invite-result-label">✉️ Invite email sent to ${escapeHTML(email)}</p>
+            <div class="invite-result-actions">
+              <button class="invite-copy-now" data-token="${invite.token}">Copy Backup Link</button>
+            </div>
+          `
+            : `
+            <p class="invite-result-label">Email could not be sent — share this link instead</p>
             <p class="invite-result-link">${escapeHTML(link)}</p>
             <div class="invite-result-actions">
               <button class="invite-copy-now" data-token="${invite.token}">Copy Link</button>
@@ -558,7 +575,7 @@ const App = {
             </div>
           `;
         }
-        this.showToast(`Invite created for ${name}!`);
+        this.showToast(emailSent ? `Invite emailed to ${name}!` : `Invite created for ${name}`);
         this.state.activePersonId = 'invite_' + invite.id;
         this._renderPipeline();
       } catch (err) {
@@ -1057,7 +1074,7 @@ const App = {
 // ── Auth screen event bindings ─────────────────────────────────────────────────
 
 document.addEventListener('DOMContentLoaded', () => {
-  // Auth form — send magic link
+  // Auth form — send OTP code to email
   document.getElementById('auth-form')?.addEventListener('submit', async e => {
     e.preventDefault();
     const email = document.getElementById('auth-email')?.value.trim();
@@ -1067,18 +1084,49 @@ document.addEventListener('DOMContentLoaded', () => {
     btn.textContent = 'Sending…';
 
     try {
-      // Persist invite token across the magic-link redirect
+      // Persist invite token in case the user signs in via the email link instead
       if (App.state.pendingInviteToken) {
         sessionStorage.setItem('vtm_pending_invite', App.state.pendingInviteToken);
       }
-      await Auth.sendMagicLink(email);
+      await Auth.sendOtp(email);
       document.getElementById('auth-form-wrap').classList.add('hidden');
-      document.getElementById('auth-sent-msg').classList.remove('hidden');
+      document.getElementById('auth-otp-email').textContent = email;
+      document.getElementById('auth-otp-wrap').classList.remove('hidden');
+      setTimeout(() => document.getElementById('auth-otp-input')?.focus(), 50);
+    } catch (err) {
+      App.showToast(err.message || 'Could not send code', true);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Send Code';
+    }
+  });
+
+  // OTP form — verify the code
+  document.getElementById('auth-otp-form')?.addEventListener('submit', async e => {
+    e.preventDefault();
+    const email = document.getElementById('auth-otp-email')?.textContent.trim();
+    const code  = document.getElementById('auth-otp-input')?.value.trim();
+    if (!email || !code) return;
+    const btn = document.getElementById('auth-otp-btn');
+    btn.disabled = true;
+    btn.textContent = 'Verifying…';
+
+    try {
+      await Auth.verifyOtp(email, code);
+      // SIGNED_IN auth event takes over routing from here
     } catch (err) {
       btn.disabled = false;
-      btn.textContent = 'Send Magic Link';
-      App.showToast(err.message || 'Could not send magic link', true);
+      btn.textContent = 'Verify & Sign In';
+      App.showToast(err.message || 'Invalid or expired code', true);
+      const input = document.getElementById('auth-otp-input');
+      if (input) { input.value = ''; input.focus(); }
     }
+  });
+
+  // Back to email entry
+  document.getElementById('auth-otp-back')?.addEventListener('click', () => {
+    document.getElementById('auth-otp-wrap').classList.add('hidden');
+    document.getElementById('auth-form-wrap').classList.remove('hidden');
   });
 
   // Onboarding form

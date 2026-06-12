@@ -41,6 +41,23 @@ const Invite = {
     return { invite: data, link: this._makeLink(data.token) };
   },
 
+  // ── Email the invite to the team member via Edge Function ─────────────────
+  // Returns { sent, existing? }. Throws if the email could not be sent.
+  async sendEmail(invite) {
+    if (!SupabaseClient) throw new Error('Supabase not configured');
+    const { data, error } = await SupabaseClient.functions.invoke('send-invite', {
+      body: {
+        email:       invite.email,
+        name:        invite.name,
+        inviteToken: invite.token,
+        appUrl:      CONFIG.APP_URL
+      }
+    });
+    if (error) throw error;
+    if (data?.error) throw new Error(data.error);
+    return data;
+  },
+
   // ── Fetch all invites created by the current assigner ────────────────────
   async listByAssigner() {
     if (!SupabaseClient || !Auth.profile) return [];

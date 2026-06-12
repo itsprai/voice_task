@@ -29,20 +29,26 @@
     </div>
     <h1 class="auth-app-name">TaskVoice</h1>
     <p id="auth-title" class="auth-title">Sign in to continue</p>
-    <p id="auth-subtitle" class="auth-subtitle">We'll send a magic link to your email — no password needed.</p>
+    <p id="auth-subtitle" class="auth-subtitle">We'll email you a 6-digit code — no password needed.</p>
 
     <div id="auth-form-wrap">
       <form id="auth-form" class="auth-form">
         <input type="email" id="auth-email" class="auth-input" placeholder="your@email.com"
                autocomplete="email" inputmode="email" required/>
-        <button type="submit" id="auth-btn" class="auth-btn">Send Magic Link</button>
+        <button type="submit" id="auth-btn" class="auth-btn">Send Code</button>
       </form>
     </div>
 
-    <div id="auth-sent-msg" class="auth-sent hidden">
+    <div id="auth-otp-wrap" class="auth-sent hidden">
       <div class="auth-sent-icon">📬</div>
       <p class="auth-sent-title">Check your email</p>
-      <p class="auth-sent-sub">Tap the link we sent you to sign in. You can close this tab.</p>
+      <p class="auth-sent-sub">Enter the 6-digit code we sent to <strong id="auth-otp-email"></strong></p>
+      <form id="auth-otp-form" class="auth-form">
+        <input type="text" id="auth-otp-input" class="auth-input auth-otp-input" placeholder="••••••"
+               inputmode="numeric" autocomplete="one-time-code" maxlength="6" required/>
+        <button type="submit" id="auth-otp-btn" class="auth-btn">Verify &amp; Sign In</button>
+      </form>
+      <button type="button" id="auth-otp-back" class="auth-text-btn">Use a different email</button>
     </div>
   </div>
 </div>

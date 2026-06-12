@@ -1,6 +1,6 @@
 // ─────────────────────────────────────────────────────────────────────────────
 //  auth.js — Supabase Auth wrapper
-//  Handles session, magic-link login, profile creation, sign-out.
+//  Handles session, email-OTP login, profile creation, sign-out.
 // ─────────────────────────────────────────────────────────────────────────────
 
 const Auth = {
@@ -34,14 +34,26 @@ const Auth = {
     return session;
   },
 
-  // ── Send magic link to email ──────────────────────────────────────────────
-  async sendMagicLink(email) {
+  // ── Send 6-digit OTP code to email ────────────────────────────────────────
+  async sendOtp(email) {
     if (!SupabaseClient) throw new Error('Supabase not configured');
     const { error } = await SupabaseClient.auth.signInWithOtp({
       email: email.trim().toLowerCase(),
       options: { emailRedirectTo: CONFIG.APP_URL }
     });
     if (error) throw error;
+  },
+
+  // ── Verify OTP code and create the session ───────────────────────────────
+  async verifyOtp(email, code) {
+    if (!SupabaseClient) throw new Error('Supabase not configured');
+    const { data, error } = await SupabaseClient.auth.verifyOtp({
+      email: email.trim().toLowerCase(),
+      token: code.trim(),
+      type:  'email'
+    });
+    if (error) throw error;
+    return data.session;
   },
 
   // ── Sign out ──────────────────────────────────────────────────────────────
