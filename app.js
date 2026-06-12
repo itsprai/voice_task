@@ -36,6 +36,13 @@ const App = {
     pendingInviteToken: null
   },
 
+  // Guards: auth fires SIGNED_IN/TOKEN_REFRESHED repeatedly — booting more
+  // than once would stack duplicate event listeners (every click/voice action
+  // would then fire N times, creating duplicate tasks)
+  _booted: false,
+  _assignerUIBound: false,
+  _assigneeUIBound: false,
+
   // ── Bootstrap ──────────────────────────────────────────────────────────────
   async init() {
     // Capture invite token from URL first; fall back to sessionStorage which
@@ -76,6 +83,7 @@ const App = {
   },
 
   async _onSignedIn() {
+    if (this._booted) return; // already running (e.g. TOKEN_REFRESHED) — realtime keeps data fresh
     const profile = await Auth.loadProfile();
 
     if (!profile) {
@@ -103,6 +111,7 @@ const App = {
   },
 
   _onSignedOut() {
+    this._booted = false;
     this._showScreen('auth');
   },
 
@@ -158,28 +167,39 @@ const App = {
 
   // ── Assigner boot ──────────────────────────────────────────────────────────
   async _bootAssigner() {
+    this._booted = true;
     this._showScreen('assigner-app');
-    this._bindAssignerNav();
-    this._bindAssignerMic();
-    this._bindPipelineFAB();
-    this._bindPipelineEvents();
-    this._bindTaskEvents();
-    this._bindSyncEvents();
-    this.voice = new VoiceRecorder();
-    this._bindVoiceEvents();
-    this._initNotifBanner();
+
+    if (!this._assignerUIBound) {
+      this._assignerUIBound = true;
+      this._bindAssignerNav();
+      this._bindAssignerMic();
+      this._bindPipelineFAB();
+      this._bindPipelineEvents();
+      this._bindTaskEvents();
+      this._bindSyncEvents();
+      this.voice = new VoiceRecorder();
+      this._bindVoiceEvents();
+      this._initNotifBanner();
+      Sync.subscribe(() => this._pullAll());
+    }
 
     await this._pullAll();
-    Sync.subscribe(() => this._pullAll());
     this.navigateTo(localStorage.getItem('vtm_v2_page') || 'home');
     Notifications.init(this.state.tasks);
   },
 
   // ── Assignee boot ──────────────────────────────────────────────────────────
   async _bootAssignee() {
+    this._booted = true;
     this._showScreen('assignee-app');
-    this._bindAssigneeEvents();
-    this._bindAssigneeNav();
+
+    if (!this._assigneeUIBound) {
+      this._assigneeUIBound = true;
+      this._bindAssigneeEvents();
+      this._bindAssigneeNav();
+      Sync.subscribe(() => this._pullAll());
+    }
 
     // Accept any pending invite (handles the case where the user already had a
     // profile but the invite was never accepted, e.g. re-opening the invite link)
@@ -193,7 +213,6 @@ const App = {
     await Invite.acceptAllForEmail();
 
     await this._pullAll();
-    Sync.subscribe(() => this._pullAll());
     Notifications.init(this.state.tasks);
   },
 
@@ -1255,11 +1274,9 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function applyLayout() {
+    // CSS anchors all screens to var(--real-height); env() handles safe areas
     root.style.setProperty('--real-height', `${window.innerHeight}px`);
-    const safeBottom = measureSafeBottom();
-    root.style.setProperty('--safe-bottom-px', `${safeBottom}px`);
-    document.querySelectorAll('.bottom-nav').forEach(nav => { nav.style.paddingBottom = `${safeBottom}px`; });
-    document.querySelectorAll('.screen--active .app-shell').forEach(app => { app.style.bottom = `${50 + safeBottom}px`; });
+    root.style.setProperty('--safe-bottom-px', `${measureSafeBottom()}px`);
   }
 
   function run() { applyLayout(); setTimeout(applyLayout, 80); }

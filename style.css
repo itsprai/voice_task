@@ -62,9 +62,13 @@ body::before {
 .hidden { display: none !important; }
 
 /* ─── Screens (full-page containers) ────────────────────────────────── */
+/* Height comes from --real-height (window.innerHeight, set by fixIOSLayout)
+   because iOS standalone PWAs misreport the fixed-position viewport, leaving
+   a dead gap under bottom-anchored elements. */
 .screen {
   position: fixed;
-  inset: 0;
+  top: 0; left: 0; right: 0;
+  height: var(--real-height, 100dvh);
   display: none;
   flex-direction: column;
   background: var(--bg);
@@ -842,7 +846,8 @@ body::before {
 /* ─── Voice capture overlay ──────────────────────────────────────────── */
 .voice-overlay {
   position: fixed;
-  inset: 0;
+  top: 0; left: 0; right: 0;
+  height: var(--real-height, 100dvh);
   z-index: 500;
   background: rgba(15,23,42,0.55);
   -webkit-backdrop-filter: blur(14px);
