@@ -56,6 +56,14 @@ const Auth = {
     return data.session;
   },
 
+  // ── Server-side check that this session's user still exists ──────────────
+  // Cached sessions in localStorage can outlive a deleted auth.users row.
+  async verifySession() {
+    if (!SupabaseClient || !this._session) return false;
+    const { data, error } = await SupabaseClient.auth.getUser();
+    return !error && !!data?.user;
+  },
+
   // ── Sign out ──────────────────────────────────────────────────────────────
   async signOut() {
     if (!SupabaseClient) return;

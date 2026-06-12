@@ -67,6 +67,17 @@ const App = {
     const profile = await Auth.loadProfile();
 
     if (!profile) {
+      // No profile could also mean a stale local session whose user was
+      // deleted server-side — verify before offering onboarding
+      if (!(await Auth.verifySession())) {
+        await Auth.signOut();
+        if (this.state.pendingInviteToken) {
+          await this._showInviteAuthScreen(this.state.pendingInviteToken);
+        } else {
+          this._showScreen('auth');
+        }
+        return;
+      }
       // New user — determine role from invite token or let them choose
       await this._showOnboarding();
       return;
