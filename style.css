@@ -1000,3 +1000,86 @@ input[type="time"]::-webkit-date-and-time-value {
 
   .toast { bottom: calc(var(--nav-h) + 30px); }
 }
+
+/* ─── True desktop layout — sidebar nav at ≥1024px ────────────────────── */
+@media (min-width: 1024px) {
+  body, body::before { background: var(--bg); }
+  #screen-assigner-app, #screen-assignee-app { background: var(--bg); }
+
+  /* Cancel the 760px centered-column rule */
+  .app-shell {
+    left: 240px; right: 0;
+    width: auto; max-width: none; margin-left: 0;
+    top: var(--safe-top); bottom: 0;
+    box-shadow: none; border-radius: 0;
+    background: var(--bg);
+  }
+
+  /* Bottom tab bar becomes a left sidebar */
+  .bottom-nav {
+    top: 0; bottom: 0; left: 0; right: auto;
+    width: 240px; max-width: none; margin-left: 0;
+    padding: 22px 14px;
+    flex-direction: column;
+    justify-content: flex-start;
+    align-items: stretch;
+    background: white;
+    border-top: none;
+    border-right: 1px solid #e7ebf2;
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    box-shadow: none;
+  }
+
+  /* Sidebar brand */
+  .bottom-nav::before {
+    content: 'TaskVoice';
+    display: block;
+    padding: 4px 14px 22px;
+    font-size: 20px; font-weight: 800;
+    color: var(--text); letter-spacing: -0.01em;
+  }
+
+  /* Nav items become rows */
+  .nav-btn {
+    flex: 0 0 auto;
+    height: 44px;
+    width: 100%;
+    flex-direction: row;
+    justify-content: flex-start;
+    gap: 12px;
+    padding: 0 14px;
+    font-size: 14px;
+    border-radius: 10px;
+    margin-bottom: 4px;
+  }
+  .nav-btn:hover    { background: #f4f6fa; }
+  .nav-btn--active  { background: var(--primary-soft); color: var(--primary); }
+  .nav-btn svg      { width: 20px; height: 20px; }
+
+  /* Badge moves inline with the row */
+  .nav-badge {
+    position: static;
+    transform: none;
+    margin-left: auto;
+  }
+
+  /* Cap content widths so things stay readable */
+  .page-header,
+  .home-main,
+  .tasks-main,
+  .pipeline-tabs,
+  .pipeline-main {
+    max-width: 960px;
+    margin-left: auto;
+    margin-right: auto;
+    padding-left: 40px;
+    padding-right: 40px;
+  }
+  .home-main      { padding-bottom: 160px; }
+  .tasks-main     { padding-bottom: 60px; }
+  .pipeline-main  { padding-bottom: 100px; }
+
+  /* Toast centers over the content area, not the viewport */
+  .toast { bottom: 30px; left: calc(50% + 120px); }
+}
