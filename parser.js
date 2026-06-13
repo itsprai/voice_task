@@ -23,20 +23,37 @@ const Parser = {
     const systemPrompt = `You are a task extraction assistant for a busy manager.
 Today is ${todayLabel} (${todayISO}). Current time is ${currentTime}.
 
-The manager's team: ${teamNames}. Match assignee names exactly to this list (case-insensitive).
+The manager's team: ${teamNames}. Team-member names must match this list exactly (case-insensitive).
 
 Extract EVERY task mentioned. Each task has its OWN assignee, date, and time.
 
+ASSIGNEE — read CAREFULLY:
+- The assignee is the PERSON WHO MUST DO the task, NOT the recipient of an outcome.
+- Use "Me" ONLY when the manager is asking themselves to do something. Phrases that mean assignee = "Me":
+  * "remind me to X", "I need to X", "I have to X", "I should X", "my task to X", "for myself"
+- Use a team member name when the manager is delegating. Phrases that mean assignee = team member:
+  * "ask X to", "tell X to", "have X", "get X to", "assign X to", "X needs to", "X should"
+
+CRITICAL — do NOT confuse "me" appearing inside a delegated task with a self-task:
+  * "Ask Aditya to send the report to me" → assignee = "Aditya" (Aditya does the work; "to me" is just the recipient)
+  * "Tell Sarah to email me by 5pm" → assignee = "Sarah"
+  * "Have Marcus call me tomorrow" → assignee = "Marcus"
+  * "Get John to update me on status" → assignee = "John"
+  * "Remind me to email Sarah" → assignee = "Me"
+  * "I need to call Marcus" → assignee = "Me"
+
+Whenever a delegation phrase ("ask/tell/have/get/assign X to") is present, the assignee is X — regardless of how many times "me" appears later in the sentence.
+
 For each task return:
-- "description": imperative phrase, no assignee name.
-- "assignee": person's name from the team list (title case). Look for: "assign X to", "tell X to", "ask X to", "have X", "get X to".
+- "description": imperative phrase. Strip "remind me to", "I need to", "I have to" when assignee is "Me".
+- "assignee": "Me" for self-tasks, or a team member's name (title case) for delegated tasks.
 - "dueDate": resolve relative dates to YYYY-MM-DD. Use ${todayISO} if no date mentioned.
-  - "today" = ${todayISO}, "tomorrow" = next day
-  - "this [weekday]" = upcoming occurrence, "next [weekday]" = next week
-  - "end of week" = this Friday
+  * "today" = ${todayISO}, "tomorrow" = next day
+  * "this [weekday]" = upcoming occurrence, "next [weekday]" = next week
+  * "end of week" = this Friday
 - "time": extract time in HH:MM (24-hour). Use ${currentTime} if no time mentioned.
-  - "3pm" = "15:00", "9am" = "09:00", "noon" = "12:00"
-  - "morning" = "09:00", "afternoon" = "14:00", "evening" = "18:00"
+  * "3pm" = "15:00", "9am" = "09:00", "noon" = "12:00"
+  * "morning" = "09:00", "afternoon" = "14:00", "evening" = "18:00"
 
 Return a JSON object:
 {"tasks": [{"description": "string", "assignee": "string", "dueDate": "YYYY-MM-DD", "time": "HH:MM"}]}
@@ -85,25 +102,51 @@ If no task found:
     const createdAt = new Date().toISOString();
     const result    = [];
 
+    const myId       = Auth.profile?.id ?? null;
+    const myName     = Auth.profile?.full_name ?? 'Me';
+    const selfRefs   = ['me', 'myself', 'i', 'self'];
+
     for (const t of tasks) {
       if (!t.description || !t.assignee) continue;
 
+      const assigneeRaw = t.assignee.trim();
+      const isSelf = selfRefs.includes(assigneeRaw.toLowerCase());
+
+      if (isSelf) {
+        // Personal task — assigner & assignee both the current user
+        result.push({
+          id:          crypto.randomUUID(),
+          raw:         transcript,
+          description: t.description.trim(),
+          assignee:    myName,
+          assignee_id: myId,
+          assigner_id: myId,
+          added_by:    myId,
+          dueDate:     t.dueDate || todayISO,
+          time:        t.time    || currentTime,
+          status:      'pending',
+          createdAt,
+          updatedAt:   createdAt
+        });
+        continue;
+      }
+
       // Resolve assignee name → team member
-      const member = this._resolveTeamMember(t.assignee, team);
+      const member = this._resolveTeamMember(assigneeRaw, team);
       if (!member && team.length > 0) {
-        throw new Error(`"${t.assignee}" is not in your team. Check the name and try again.`);
+        throw new Error(`"${assigneeRaw}" is not in your team. Check the name and try again.`);
       }
 
       result.push({
         id:          crypto.randomUUID(),
         raw:         transcript,
         description: t.description.trim(),
-        assignee:    member ? member.full_name : t.assignee.trim(),
+        assignee:    member ? member.full_name : assigneeRaw,
         assignee_id: member ? member.id : null,
-        assigner_id: Auth.profile?.id ?? null,
-        added_by:    Auth.profile?.id ?? null,
-        dueDate:     t.dueDate  || todayISO,
-        time:        t.time     || currentTime,
+        assigner_id: myId,
+        added_by:    myId,
+        dueDate:     t.dueDate || todayISO,
+        time:        t.time    || currentTime,
         status:      'pending',
         createdAt,
         updatedAt:   createdAt
