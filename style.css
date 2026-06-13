@@ -1064,17 +1064,18 @@ input[type="time"]::-webkit-date-and-time-value {
     margin-left: auto;
   }
 
-  /* Cap content widths so things stay readable */
+  /* Content fills the area right of the sidebar with a generous cap so
+     cards never become unreadably wide on huge monitors */
   .page-header,
   .home-main,
   .tasks-main,
   .pipeline-tabs,
   .pipeline-main {
-    max-width: 960px;
-    margin-left: auto;
+    max-width: 1400px;
+    margin-left: 0;
     margin-right: auto;
-    padding-left: 40px;
-    padding-right: 40px;
+    padding-left: 48px;
+    padding-right: 48px;
   }
   .home-main      { padding-bottom: 160px; }
   .tasks-main     { padding-bottom: 60px; }
