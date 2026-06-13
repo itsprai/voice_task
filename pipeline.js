@@ -14,43 +14,38 @@ function renderPipelinePage(tasks, activePersonId, editMode, showAddPerson, pinn
   const mainEl    = document.getElementById('pipeline-main');
 
   const pinnedSet = new Set(pinnedIds);
+  const myId      = Auth.profile?.id;
 
-  // Build ordered list: pinned first, then rest alphabetically
+  // "Me" is a synthetic chip representing personal tasks (assigner=me, assignee=me).
+  // It's always first, can't be pinned, can't be removed.
+  const meEntry = { id: myId, full_name: 'Me', _isMe: true };
+
+  // Build ordered list: Me first, then pinned, then rest alphabetically
   const pinnedTeam  = pinnedIds.filter(id => team.some(m => m.id === id)).map(id => team.find(m => m.id === id));
   const unpinned    = team.filter(m => !pinnedSet.has(m.id)).sort((a, b) => a.full_name.localeCompare(b.full_name));
-  const orderedTeam = [...pinnedTeam, ...unpinned];
-
-  // ── Empty state ────────────────────────────────────────────────────────────
-  if (!orderedTeam.length && !pendingInvites.length) {
-    tabsEl.innerHTML = `
-      <p class="pipeline-empty-tabs">No team members yet</p>
-      <button class="add-person-tab-btn" id="add-person-btn">+ Invite Person</button>
-    `;
-    addAreaEl.innerHTML = renderInviteForm(showAddPerson);
-    mainEl.innerHTML = '<div class="empty-section" style="padding:40px 16px">Invite someone to get started. Tap the mic on Home to assign a task once they join.</div>';
-    return null;
-  }
+  const orderedTeam = [meEntry, ...pinnedTeam, ...unpinned];
 
   // ── Resolve active person ──────────────────────────────────────────────────
   const allIds = [...orderedTeam.map(m => m.id), ...pendingInvites.map(i => 'invite_' + i.id)];
-  const personId = allIds.includes(activePersonId) ? activePersonId : (orderedTeam[0]?.id || allIds[0] || null);
+  const personId = allIds.includes(activePersonId) ? activePersonId : myId;
 
   // ── Tab strip ──────────────────────────────────────────────────────────────
   const confirmedTabs = orderedTeam.map(member => {
-    const isPinned = pinnedSet.has(member.id);
+    const isMe     = !!member._isMe;
+    const isPinned = !isMe && pinnedSet.has(member.id);
     const pinIcon  = isPinned
       ? `<svg class="tab-pin-icon" viewBox="0 0 24 24" fill="currentColor" width="10" height="10">
            <path d="M16 9V4h1c.55 0 1-.45 1-1s-.45-1-1-1H7c-.55 0-1 .45-1 1s.45 1 1 1h1v5c0 1.66-1.34 3-3 3v2h5.97v7l1 1 1-1v-7H18v-2c-1.66 0-3-1.34-3-3z"/>
          </svg>`
       : '';
-    const initial = escapeHTML(member.full_name.trim()[0]?.toUpperCase() || '?');
+    const initial = escapeHTML((isMe ? 'M' : (member.full_name.trim()[0]?.toUpperCase() || '?')));
     return `
       <div class="tab-wrapper">
         <button class="person-tab ${member.id === personId ? 'person-tab--active' : ''}"
                 data-person-id="${member.id}">
           <span class="tab-avatar">${initial}</span>${pinIcon}${escapeHTML(member.full_name)}
         </button>
-        ${editMode ? `<button class="tab-delete-btn" data-person-id="${member.id}" aria-label="Remove ${escapeHTML(member.full_name)}">&#x2715;</button>` : ''}
+        ${editMode && !isMe ? `<button class="tab-delete-btn" data-person-id="${member.id}" aria-label="Remove ${escapeHTML(member.full_name)}">&#x2715;</button>` : ''}
       </div>
     `;
   }).join('');
@@ -85,9 +80,12 @@ function renderPipelinePage(tasks, activePersonId, editMode, showAddPerson, pinn
     }
   }
 
-  // ── Confirmed team member tasks ────────────────────────────────────────────
+  // ── Confirmed team member tasks (or personal tasks when Me is active) ─────
   const member      = orderedTeam.find(m => m.id === personId);
-  const personTasks = tasks.filter(t => t.assignee_id === personId || (!t.assignee_id && t.assignee === member?.full_name));
+  const isMeActive  = !!member?._isMe;
+  const personTasks = isMeActive
+    ? tasks.filter(t => t.assigner_id === myId && t.assignee_id === myId)
+    : tasks.filter(t => t.assignee_id === personId || (!t.assignee_id && t.assignee === member?.full_name));
 
   const today    = new Date(); today.setHours(0, 0, 0, 0);
   const tomorrow = new Date(today); tomorrow.setDate(today.getDate() + 1);
@@ -131,9 +129,12 @@ function renderPipelinePage(tasks, activePersonId, editMode, showAddPerson, pinn
     pipelineSection('Done',     'done',     sortDesc(groupDone),    'No completed tasks'),
   ].join('');
 
+  const addFormTitle = isMeActive
+    ? 'Add a personal task'
+    : `Add task for ${escapeHTML(member?.full_name || '')}`;
   const addFormHTML = editMode ? `
     <div class="add-task-form">
-      <p class="add-task-title">Add task for ${escapeHTML(member?.full_name || '')}</p>
+      <p class="add-task-title">${addFormTitle}</p>
       <input type="text" id="add-task-desc"  class="add-task-input" placeholder="Task description…" autocomplete="off"/>
       <label class="add-task-field-label" for="add-task-date">Date</label>
       <input type="date" id="add-task-date"  class="add-task-date"/>
@@ -143,7 +144,10 @@ function renderPipelinePage(tasks, activePersonId, editMode, showAddPerson, pinn
     </div>
   ` : '';
 
-  mainEl.innerHTML = (sectionsHTML || '<div class="empty-section">No tasks for this person yet.</div>') + addFormHTML;
+  const emptyMsg = isMeActive
+    ? 'No personal tasks yet. Tap Edit to add one.'
+    : 'No tasks for this person yet.';
+  mainEl.innerHTML = (sectionsHTML || `<div class="empty-section">${emptyMsg}</div>`) + addFormHTML;
   return personId;
 }
 
@@ -184,6 +188,8 @@ function pipelineCardHTML(task, editMode, editingTaskId) {
     </div>
   ` : '';
 
+  const createdLabel = formatCreatedAt(task.createdAt);
+
   return `
     <div class="pipeline-card ${isOverdue ? 'pipeline-card--overdue' : ''}">
       <button class="check-btn ${isCompleted ? 'check-btn--checked' : ''}" data-id="${task.id}" aria-label="Toggle complete">
@@ -192,6 +198,7 @@ function pipelineCardHTML(task, editMode, editingTaskId) {
       <div class="pipeline-card-info">
         <div class="pipeline-card-desc ${isCompleted ? 'pipeline-card-desc--done' : ''}">${escapeHTML(task.description)}</div>
         ${dateTime ? `<div class="pipeline-card-date ${isOverdue ? 'pipeline-card-date--overdue' : isToday ? 'pipeline-card-date--today' : ''}">${dateTime}</div>` : ''}
+        ${createdLabel ? `<div class="task-added-at">Added ${escapeHTML(createdLabel)}</div>` : ''}
         ${selfAdded ? `<div class="pipeline-card-self-added">Added by assignee</div>` : ''}
       </div>
       ${editBtnHTML}${deleteBtnHTML}

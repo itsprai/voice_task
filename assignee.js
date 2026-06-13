@@ -9,30 +9,19 @@ function renderAssigneeTasksPage(tasks, assigners, editingTaskId = null) {
   const main = document.getElementById('assignee-main');
   if (!main) return;
 
-  if (!assigners.length) {
-    main.innerHTML = `
-      <div class="empty-section" style="padding:48px 20px;text-align:center;">
-        <p style="margin-bottom:12px;color:var(--primary);">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" width="40" height="40">
-            <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/>
-            <path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>
-          </svg>
-        </p>
-        <p style="font-weight:600;margin-bottom:6px;">You're in!</p>
-        <p style="color:var(--muted);font-size:14px;">Your manager will assign tasks to you soon. Check back here to see them.</p>
-      </div>
-    `;
-    return;
-  }
+  const myId    = Auth.profile?.id;
+  const meEntry = { id: myId, full_name: 'Me', _isMe: true };
+  const allOptions = [meEntry, ...assigners];
 
-  // Active manager tab (mirrors the assigner Team page)
+  // Active selection (Me is a valid choice even when no managers exist)
   const stateActive = typeof App !== 'undefined' ? App.state.activeAssignerId : null;
-  const activeId = assigners.some(a => a.id === stateActive) ? stateActive : assigners[0].id;
+  const activeId = allOptions.some(o => o.id === stateActive) ? stateActive : (assigners[0]?.id || myId);
   if (typeof App !== 'undefined') App.state.activeAssignerId = activeId;
-  const active = assigners.find(a => a.id === activeId);
+  const active   = allOptions.find(o => o.id === activeId);
+  const isMe     = !!active?._isMe;
 
-  const chips = assigners.map(a => {
-    const initial = escapeHTML(a.full_name.trim()[0]?.toUpperCase() || '?');
+  const chips = allOptions.map(a => {
+    const initial = escapeHTML(a._isMe ? 'M' : (a.full_name.trim()[0]?.toUpperCase() || '?'));
     return `
       <button class="person-tab ${a.id === activeId ? 'person-tab--active' : ''}" data-assigner-id="${a.id}">
         <span class="tab-avatar">${initial}</span>${escapeHTML(a.full_name)}
@@ -40,8 +29,11 @@ function renderAssigneeTasksPage(tasks, assigners, editingTaskId = null) {
     `;
   }).join('');
 
-  // Group active manager's tasks by due status (same as the manager pipeline)
-  const personTasks = tasks.filter(t => t.assigner_id === activeId);
+  // Group active person's tasks by due status (same as the manager pipeline).
+  // Me = personal tasks (assigner=me & assignee=me); else = tasks from that manager.
+  const personTasks = isMe
+    ? tasks.filter(t => t.assigner_id === myId && t.assignee_id === myId)
+    : tasks.filter(t => t.assigner_id === activeId);
   const today = new Date(); today.setHours(0, 0, 0, 0);
 
   const groupOverdue = [], groupToday = [], groupUpcoming = [], groupNoDate = [], groupDone = [];
@@ -71,9 +63,12 @@ function renderAssigneeTasksPage(tasks, assigners, editingTaskId = null) {
     section('Done',     'done',     groupDone, 'desc')
   ].join('');
 
+  const emptyMsg = isMe
+    ? 'No personal tasks yet. Tap + to add one.'
+    : `No tasks from ${escapeHTML(active?.full_name || 'this manager')} yet.`;
   main.innerHTML = `
     <div class="pipeline-tabs assignee-tabs">${chips}</div>
-    ${sections || `<div class="empty-section">No tasks from ${escapeHTML(active?.full_name || 'this manager')} yet.</div>`}
+    ${sections || `<div class="empty-section">${emptyMsg}</div>`}
   `;
 }
 
@@ -100,6 +95,8 @@ function assigneeCardHTML(task, computedStatus, editingTaskId) {
     </div>
   ` : '';
 
+  const createdLabel = formatCreatedAt(task.createdAt);
+
   return `
     <div class="assignee-task-card ${isCompleted ? 'assignee-task-card--done' : ''} ${isOverdue ? 'assignee-task-card--overdue' : ''}">
       <button class="check-btn ${isCompleted ? 'check-btn--checked' : ''}" data-id="${task.id}" aria-label="Toggle complete">
@@ -108,6 +105,7 @@ function assigneeCardHTML(task, computedStatus, editingTaskId) {
       <div class="assignee-task-body">
         <div class="assignee-task-desc ${isCompleted ? 'assignee-task-desc--done' : ''}">${escapeHTML(task.description)}</div>
         ${dateTime ? `<div class="assignee-task-date ${isOverdue ? 'task-date--overdue' : isToday ? 'task-date--today' : ''}">${dateTime}</div>` : ''}
+        ${createdLabel ? `<div class="task-added-at">Added ${escapeHTML(createdLabel)}</div>` : ''}
         ${selfAdded ? `<div class="task-self-added">Added by you</div>` : ''}
       </div>
       <button class="assignee-edit-btn" data-id="${task.id}" aria-label="Edit">
@@ -122,7 +120,14 @@ function assigneeCardHTML(task, computedStatus, editingTaskId) {
 
 // ── Add Task form (assignee adds their own task attributed to an assigner) ────
 function renderAssigneeAddTaskForm(assigners, activeAssignerId) {
-  if (!assigners.length) return `
+  const myId = Auth.profile?.id;
+  const isMe = activeAssignerId === myId;
+
+  const active = isMe
+    ? { id: myId, full_name: Auth.profile?.full_name || 'Me' }
+    : (assigners.find(a => a.id === activeAssignerId) || assigners[0]);
+
+  if (!active) return `
     <div class="sheet-backdrop" data-close-sheet></div>
     <div class="sheet assignee-add-form">
       <div class="sheet-grabber"></div>
@@ -132,14 +137,16 @@ function renderAssigneeAddTaskForm(assigners, activeAssignerId) {
     </div>
   `;
 
-  const active = assigners.find(a => a.id === activeAssignerId) || assigners[0];
+  const contextLine = isMe
+    ? `<p class="sheet-context">Personal task</p>`
+    : `<p class="sheet-context">From <strong>${escapeHTML(active.full_name)}</strong></p>`;
 
   return `
     <div class="sheet-backdrop" data-close-sheet></div>
     <div class="sheet assignee-add-form" id="assignee-add-form">
       <div class="sheet-grabber"></div>
       <p class="sheet-title">Add a task</p>
-      <p class="sheet-context">From <strong>${escapeHTML(active.full_name)}</strong></p>
+      ${contextLine}
       <input type="text" id="add-assignee-task-desc" class="add-task-input" placeholder="Task description…" autocomplete="off"/>
       <label class="add-task-field-label" for="add-assignee-task-date">Date</label>
       <input type="date" id="add-assignee-task-date" class="add-task-date"/>

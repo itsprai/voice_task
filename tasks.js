@@ -68,6 +68,12 @@ function sortByDateTime(tasks, direction = 'asc') {
   });
 }
 
+// Personal task = user is both assigner and assignee. Hidden from every view
+// except the Me chip on Team / My Tasks.
+function isPersonalTask(t, userId) {
+  return userId && t.assigner_id === userId && t.assignee_id === userId;
+}
+
 function escapeHTML(str) {
   if (str == null) return '';
   return String(str)
@@ -91,9 +97,12 @@ function renderHomePage(tasks, nameMap = {}) {
   }
   if (!chipsEl || !listEl) return;
 
-  const pendingCount = tasks.filter(t => ['pending', 'future'].includes(getComputedStatus(t))).length;
-  const doneCount    = tasks.filter(t => getComputedStatus(t) === 'completed').length;
-  const overdueCount = tasks.filter(t => getComputedStatus(t) === 'overdue').length;
+  const myId = Auth.profile?.id;
+  const teamOnly = tasks.filter(t => !isPersonalTask(t, myId));
+
+  const pendingCount = teamOnly.filter(t => ['pending', 'future'].includes(getComputedStatus(t))).length;
+  const doneCount    = teamOnly.filter(t => getComputedStatus(t) === 'completed').length;
+  const overdueCount = teamOnly.filter(t => getComputedStatus(t) === 'overdue').length;
 
   chipsEl.innerHTML = `
     <span class="stat-chip"><span class="stat-chip-dot stat-chip-dot--pending"></span>Pending ${pendingCount}</span>
@@ -103,7 +112,7 @@ function renderHomePage(tasks, nameMap = {}) {
 
   // Only tasks due today and still pending — done/overdue live on the Tasks page
   const todayTasks = sortByDateTime(
-    tasks.filter(t => getComputedStatus(t) === 'pending' && formatDate(t.dueDate) === 'Today'),
+    teamOnly.filter(t => getComputedStatus(t) === 'pending' && formatDate(t.dueDate) === 'Today'),
     'asc'
   );
 
@@ -119,8 +128,10 @@ function renderTaskPage(tasks, nameMap = {}) {
   if (!main) return;
 
   const filter = (typeof App !== 'undefined' && App.state.taskFilter) || 'all';
+  const myId   = Auth.profile?.id;
 
   const filtered = tasks.filter(t => {
+    if (isPersonalTask(t, myId)) return false;  // personal tasks live on the Me chip
     const done = getComputedStatus(t) === 'completed';
     if (filter === 'pending') return !done;
     if (filter === 'done')    return done;
@@ -179,6 +190,8 @@ function taskCardHTML(task, nameMap = {}, opts = {}) {
   const selfAdded   = task.added_by && task.added_by === task.assignee_id;
   const metaParts   = [displayName, dateTime].filter(Boolean);
 
+  const createdLabel = formatCreatedAt(task.createdAt);
+
   return `
     <div class="task-card ${cardClass}">
       <button class="check-btn ${isCompleted ? 'check-btn--checked' : ''}" data-id="${task.id}" aria-label="Toggle complete">
@@ -187,6 +200,7 @@ function taskCardHTML(task, nameMap = {}, opts = {}) {
       <div class="task-body">
         <div class="task-desc ${isCompleted ? 'task-desc--done' : ''}">${escapeHTML(task.description)}</div>
         ${metaParts.length ? `<div class="task-date ${dateClass}">${metaParts.map(escapeHTML).join(' · ')}</div>` : ''}
+        ${createdLabel ? `<div class="task-added-at">Added ${escapeHTML(createdLabel)}</div>` : ''}
         ${selfAdded ? `<div class="task-self-added">Added by assignee</div>` : ''}
       </div>
       <button class="delete-btn" data-id="${task.id}" aria-label="Delete">&#x2715;</button>

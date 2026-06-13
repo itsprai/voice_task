@@ -852,7 +852,10 @@ const App = {
         const desc = descInput?.value.trim();
         if (!desc) { descInput?.focus(); return; }
 
-        const member = this.state.team.find(m => m.id === this.state.activePersonId);
+        const isMeActive = this.state.activePersonId === Auth.profile?.id;
+        const member = isMeActive
+          ? { id: Auth.profile.id, full_name: Auth.profile.full_name }
+          : this.state.team.find(m => m.id === this.state.activePersonId);
         if (!member) return;
 
         const _date = dateInput.value || new Date().toISOString().split('T')[0];
@@ -1042,7 +1045,10 @@ const App = {
   _updatePipelineBadge() {
     const badge = document.getElementById('pipeline-badge');
     if (!badge) return;
-    const count = this.state.tasks.filter(t => t.status !== 'completed').length;
+    const myId = Auth.profile?.id;
+    const count = this.state.tasks.filter(t =>
+      t.status !== 'completed' && !isPersonalTask(t, myId)
+    ).length;
     if (count > 0) { badge.textContent = count > 99 ? '99+' : String(count); badge.style.display = 'flex'; }
     else badge.style.display = 'none';
   },
@@ -1050,7 +1056,10 @@ const App = {
   _updateAssigneeBadge() {
     const badge = document.getElementById('assignee-badge');
     if (!badge) return;
-    const count = this.state.tasks.filter(t => t.assignee_id === Auth.profile?.id && t.status !== 'completed').length;
+    const myId = Auth.profile?.id;
+    const count = this.state.tasks.filter(t =>
+      t.assignee_id === myId && t.status !== 'completed' && !isPersonalTask(t, myId)
+    ).length;
     if (count > 0) { badge.textContent = count > 99 ? '99+' : String(count); badge.style.display = 'flex'; }
     else badge.style.display = 'none';
   },

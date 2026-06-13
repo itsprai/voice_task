@@ -523,6 +523,7 @@ body::before {
 .task-date--today   { color: var(--primary); font-weight: 600; }
 .task-date--overdue { color: var(--danger) !important; font-weight: 600; }
 .task-self-added { font-size: 11px; color: var(--primary); opacity: 0.75; margin-top: 3px; font-style: italic; }
+.task-added-at   { font-size: 11px; color: var(--muted); margin-top: 3px; }
 
 .delete-btn { background: none; border: none; color: #cbd5e1; cursor: pointer; font-size: 16px; padding: 4px 2px; flex-shrink: 0; transition: color 0.15s; }
 .delete-btn:active { color: var(--danger); }
@@ -1064,16 +1065,15 @@ input[type="time"]::-webkit-date-and-time-value {
     margin-left: auto;
   }
 
-  /* Content fills the area right of the sidebar with a generous cap so
-     cards never become unreadably wide on huge monitors */
+  /* Content fills the entire area to the right of the sidebar — no cap */
   .page-header,
   .home-main,
   .tasks-main,
   .pipeline-tabs,
   .pipeline-main {
-    max-width: 1400px;
-    margin-left: 0;
-    margin-right: auto;
+    width: 100%;
+    max-width: none;
+    margin: 0;
     padding-left: 48px;
     padding-right: 48px;
   }
