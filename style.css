@@ -802,7 +802,9 @@ input[type="time"]::-webkit-date-and-time-value {
 
 .fab-actions {
   position: absolute;
-  bottom: 70px;
+  /* Anchor to the dial's top edge regardless of how tall it is (manager dial
+     has a label below the trigger which made the old fixed 70px overlap) */
+  bottom: calc(100% + 14px);
   right: 0;
   display: flex;
   flex-direction: column;
