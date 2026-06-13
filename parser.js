@@ -113,6 +113,82 @@ If no task found:
     return result;
   },
 
+  // Simplified parser — no assignee extraction. Used for personal/own-task
+  // dictation where the assignee is always the speaker.
+  async parseSimple(transcript) {
+    const now         = new Date();
+    const todayISO    = now.toISOString().split('T')[0];
+    const currentTime = now.toTimeString().slice(0, 5);
+    const todayLabel  = now.toLocaleDateString('en-US', {
+      weekday: 'long', year: 'numeric', month: 'long', day: 'numeric'
+    });
+
+    const systemPrompt = `Extract task details from the user's speech.
+Today is ${todayLabel} (${todayISO}). Current time is ${currentTime}.
+
+Extract every task mentioned. For each:
+- "description": imperative phrase. Strip "remind me to", "I need to", "I have to".
+- "dueDate": YYYY-MM-DD. Use ${todayISO} if no date.
+  - "today"=${todayISO}, "tomorrow"=next day, "this/next [weekday]", "end of week"=Friday.
+- "time": HH:MM 24-hour. Use ${currentTime} if no time.
+  - "3pm"=15:00, "noon"=12:00, "morning"=09:00, "afternoon"=14:00, "evening"=18:00.
+
+JSON only:
+{"tasks":[{"description":"...","dueDate":"YYYY-MM-DD","time":"HH:MM"}]}
+
+If nothing usable: {"tasks":[],"error":"Could not understand. Please speak again."}`;
+
+    const payload = JSON.stringify({
+      model:           CONFIG.GROQ_MODEL,
+      messages:        [{ role: 'system', content: systemPrompt }, { role: 'user', content: transcript }],
+      temperature:     0.1,
+      response_format: { type: 'json_object' }
+    });
+    const useDirect = CONFIG.GROQ_API_KEY && CONFIG.GROQ_API_KEY !== 'YOUR_GROQ_API_KEY';
+    const res = useDirect
+      ? await fetch('https://api.groq.com/openai/v1/chat/completions', {
+          method:  'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${CONFIG.GROQ_API_KEY}` },
+          body: payload
+        })
+      : await fetch('/api/groq', {
+          method:  'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${Auth.token}` },
+          body: payload
+        });
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error?.message || `Groq API error (${res.status})`);
+    }
+
+    const data    = await res.json();
+    const content = data.choices?.[0]?.message?.content || '';
+    let parsed;
+    try { parsed = JSON.parse(content); }
+    catch { throw new Error('Could not understand response. Please try again.'); }
+    if (parsed.error && (!parsed.tasks || !parsed.tasks.length)) throw new Error(parsed.error);
+
+    const tasks = (parsed.tasks || []).filter(t => t.description);
+    if (!tasks.length) throw new Error('Could not understand the task. Please speak again.');
+
+    const createdAt = new Date().toISOString();
+    return tasks.map(t => ({
+      id:          crypto.randomUUID(),
+      raw:         transcript,
+      description: t.description.trim(),
+      assignee:    '',
+      assignee_id: null,
+      assigner_id: null,
+      added_by:    null,
+      dueDate:     t.dueDate  || todayISO,
+      time:        t.time     || currentTime,
+      status:      'pending',
+      createdAt,
+      updatedAt:   createdAt
+    }));
+  },
+
   // Fuzzy match: exact → startsWith → includes (case-insensitive)
   _resolveTeamMember(name, team) {
     if (!team.length) return null;

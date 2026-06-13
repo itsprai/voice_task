@@ -770,7 +770,112 @@ input[type="time"]::-webkit-date-and-time-value {
 .pin-select-item--pinned { border-color: var(--primary); color: var(--primary); background: var(--primary-soft); }
 .pin-panel-empty { padding: 10px 16px 14px; font-size: 14px; color: var(--muted); }
 
-/* ─── Pipeline FAB ───────────────────────────────────────────────────── */
+/* ─── FAB speed dial ─────────────────────────────────────────────────── */
+.fab-speed-dial {
+  position: absolute;
+  bottom: 20px;
+  right: 18px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+  z-index: 50;
+}
+
+.fab-trigger {
+  width: 56px; height: 56px;
+  border-radius: 50%;
+  background: var(--primary);
+  color: white;
+  border: none;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  box-shadow: 0 6px 20px rgba(26,140,255,0.40);
+  transition: transform 0.28s cubic-bezier(0.34, 1.56, 0.64, 1), background 0.18s;
+}
+.fab-trigger:active { transform: scale(0.93); }
+.fab-trigger svg {
+  width: 24px; height: 24px;
+  transition: transform 0.28s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.fab-speed-dial.open .fab-trigger svg { transform: rotate(135deg); }
+
+.fab-actions {
+  position: absolute;
+  bottom: 70px;
+  right: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 10px;
+  pointer-events: none;
+}
+.fab-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 18px 9px 9px;
+  background: white;
+  border: none;
+  border-radius: 100px;
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+  box-shadow: 0 6px 18px rgba(15,23,42,0.12);
+  cursor: pointer;
+  white-space: nowrap;
+  transform: translateY(20px) scale(0.5);
+  opacity: 0;
+  transition: transform 0.26s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.2s;
+  pointer-events: auto;
+}
+.fab-pill:active { transform: translateY(0) scale(0.96); }
+.fab-pill-icon {
+  width: 30px; height: 30px;
+  border-radius: 50%;
+  background: var(--primary-soft);
+  color: var(--primary);
+  display: inline-flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+}
+.fab-speed-dial.open .fab-pill {
+  transform: translateY(0) scale(1);
+  opacity: 1;
+}
+.fab-speed-dial.open .fab-pill:nth-child(2) { transition-delay: 0.06s; }
+.fab-speed-dial.open .fab-pill:nth-child(1) { transition-delay: 0.12s; }
+
+.fab-label {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--primary);
+  background: white;
+  padding: 4px 10px;
+  border-radius: 100px;
+  box-shadow: var(--shadow-card);
+  white-space: nowrap;
+  transition: opacity 0.18s;
+}
+.fab-speed-dial.open .fab-label { opacity: 0; }
+
+.fab-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(15,23,42,0.20);
+  backdrop-filter: blur(2px);
+  -webkit-backdrop-filter: blur(2px);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.22s;
+  z-index: 40;
+}
+.fab-backdrop.open {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* ─── Pipeline FAB (legacy mic-only — kept for compatibility) ────────── */
 .pipeline-fab-wrapper { position: absolute; bottom: 20px; right: 18px; display: flex; flex-direction: column; align-items: center; gap: 6px; z-index: 50; }
 .pipeline-fab-btn { width: 56px; height: 56px; border-radius: 50%; border: none; background: var(--primary); color: white; display: flex; align-items: center; justify-content: center; cursor: pointer; box-shadow: 0 6px 20px rgba(26,140,255,0.42); transition: background 0.2s, transform 0.1s; }
 .pipeline-fab-btn:active { transform: scale(0.91); }

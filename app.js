@@ -63,6 +63,8 @@ const App = {
       document.getElementById(id)?.addEventListener('click', async () => {
         if (!confirm('Sign out?')) return;
         try { await Auth.signOut(); } catch (e) { console.warn('Sign out error:', e); }
+        this._booted = false;
+        this._resetAuthScreen();
         this._showScreen('auth');
       });
     });
@@ -120,7 +122,27 @@ const App = {
 
   _onSignedOut() {
     this._booted = false;
+    this._resetAuthScreen();
     this._showScreen('auth');
+  },
+
+  // Reset the auth screen to its initial email-entry state — without this,
+  // the OTP form stays visible (with the previous code) on sign-out.
+  _resetAuthScreen() {
+    document.getElementById('auth-form-wrap')?.classList.remove('hidden');
+    document.getElementById('auth-otp-wrap')?.classList.add('hidden');
+    document.getElementById('auth-title')?.classList.remove('hidden');
+    document.getElementById('auth-subtitle')?.classList.remove('hidden');
+    const emailIn = document.getElementById('auth-email');
+    const otpIn   = document.getElementById('auth-otp-input');
+    const sendBtn = document.getElementById('auth-btn');
+    const verifyBtn = document.getElementById('auth-otp-btn');
+    if (emailIn) { emailIn.value = ''; emailIn.readOnly = false; }
+    if (otpIn) otpIn.value = '';
+    if (sendBtn) { sendBtn.disabled = false; sendBtn.textContent = 'Send Code'; }
+    if (verifyBtn) { verifyBtn.disabled = false; verifyBtn.textContent = 'Verify & Sign In'; }
+    const otpEmail = document.getElementById('auth-otp-email');
+    if (otpEmail) otpEmail.textContent = '';
   },
 
   // ── Auth screen ────────────────────────────────────────────────────────────
@@ -204,6 +226,8 @@ const App = {
 
     if (!this._assigneeUIBound) {
       this._assigneeUIBound = true;
+      this.voice = this.voice || new VoiceRecorder();
+      this._bindVoiceEvents();
       this._bindAssigneeEvents();
       this._bindAssigneeNav();
       Sync.subscribe(() => this._pullAll());
@@ -267,8 +291,10 @@ const App = {
       this.voice.stop();
       this.state.voiceContext = 'general';
       this._setMicState('idle');
-      this._setPipelineFABState('idle');
     }
+    // Close any open speed dial when navigating
+    this._togglePipelineFAB(false);
+    this._toggleAssigneeFAB(false);
 
     document.querySelectorAll('#assigner-app .page').forEach(p => p.classList.remove('page--active'));
     document.querySelectorAll('#assigner-nav .nav-btn').forEach(b => b.classList.remove('nav-btn--active'));
@@ -324,26 +350,151 @@ const App = {
     });
   },
 
-  // ── Pipeline FAB mic ───────────────────────────────────────────────────────
+  // ── Pipeline FAB speed dial (Team page) ───────────────────────────────────
   _bindPipelineFAB() {
-    document.getElementById('pipeline-fab-btn')?.addEventListener('click', () => {
-      if (!this.state.activePersonId) return;
-      if (this.state.voiceContext === 'general' && this.voice.listening) return;
-      this.state.voiceContext = 'fab';
-      this.voice.start();
+    const dial = document.getElementById('pipeline-fab');
+    if (!dial) return;
+
+    dial.querySelector('.fab-trigger')?.addEventListener('click', () => {
+      this._togglePipelineFAB();
+    });
+
+    dial.querySelector('.fab-actions')?.addEventListener('click', e => {
+      const pill = e.target.closest('.fab-pill');
+      if (!pill) return;
+      const action = pill.dataset.fabAction;
+      this._togglePipelineFAB(false);
+      if (action === 'type')  this._openManagerTypeSheet();
+      if (action === 'speak') this._startManagerSpeak();
+    });
+
+    document.getElementById('pipeline-fab-backdrop')?.addEventListener('click', () => {
+      this._togglePipelineFAB(false);
+    });
+
+    // Close sheet via backdrop or after submit
+    document.getElementById('add-task-sheet-slot')?.addEventListener('click', async e => {
+      if (e.target.closest('[data-close-sheet]')) {
+        this._closeManagerTypeSheet();
+        return;
+      }
+      const submit = e.target.closest('#add-task-submit');
+      if (submit) {
+        e.preventDefault();
+        await this._submitManagerTypedTask();
+      }
     });
   },
 
+  _togglePipelineFAB(open) {
+    const dial = document.getElementById('pipeline-fab');
+    const backdrop = document.getElementById('pipeline-fab-backdrop');
+    if (!dial) return;
+    const next = open !== undefined ? open : !dial.classList.contains('open');
+    dial.classList.toggle('open', next);
+    backdrop?.classList.toggle('open', next);
+  },
+
+  _openManagerTypeSheet() {
+    const slot = document.getElementById('add-task-sheet-slot');
+    if (!slot) return;
+    const pid = this.state.activePersonId;
+    const myId = Auth.profile?.id;
+    const isMe = pid === myId;
+    const member = isMe
+      ? { id: myId, full_name: Auth.profile.full_name }
+      : this.state.team.find(m => m.id === pid);
+    if (!member) return;
+
+    const ctx = isMe ? 'Personal task' : `For <strong>${escapeHTML(member.full_name)}</strong>`;
+    slot.innerHTML = `
+      <div class="sheet-backdrop" data-close-sheet></div>
+      <div class="sheet">
+        <div class="sheet-grabber"></div>
+        <p class="sheet-title">Add a task</p>
+        <p class="sheet-context">${ctx}</p>
+        <input type="text" id="add-task-desc" class="add-task-input" placeholder="Task description…" autocomplete="off"/>
+        <label class="add-task-field-label" for="add-task-date">Date</label>
+        <input type="date" id="add-task-date" class="add-task-date"/>
+        <label class="add-task-field-label" for="add-task-time">Time</label>
+        <input type="time" id="add-task-time" class="add-task-date"/>
+        <button id="add-task-submit" class="add-task-btn" data-target-id="${member.id}">Add Task</button>
+      </div>
+    `;
+    setTimeout(() => document.getElementById('add-task-desc')?.focus(), 50);
+  },
+
+  _closeManagerTypeSheet() {
+    const slot = document.getElementById('add-task-sheet-slot');
+    if (slot) slot.innerHTML = '';
+  },
+
+  async _submitManagerTypedTask() {
+    const descInput = document.getElementById('add-task-desc');
+    const dateInput = document.getElementById('add-task-date');
+    const timeInput = document.getElementById('add-task-time');
+    const submit    = document.getElementById('add-task-submit');
+    const desc = descInput?.value.trim();
+    if (!desc) { descInput?.focus(); return; }
+
+    const targetId = submit?.dataset.targetId;
+    const myId = Auth.profile?.id;
+    const isMe = targetId === myId;
+    const member = isMe
+      ? { id: myId, full_name: Auth.profile.full_name }
+      : this.state.team.find(m => m.id === targetId);
+    if (!member) return;
+
+    const _date = dateInput.value || new Date().toISOString().split('T')[0];
+    const _time = timeInput?.value || new Date().toTimeString().slice(0, 5);
+
+    const newTask = {
+      id:          crypto.randomUUID(),
+      raw:         '',
+      description: desc,
+      assignee:    member.full_name,
+      assignee_id: member.id,
+      assigner_id: Auth.profile.id,
+      added_by:    Auth.profile.id,
+      dueDate:     _date,
+      time:        _time,
+      dueAt:       new Date(`${_date}T${_time}`).getTime(),
+      status:      'pending',
+      createdAt:   new Date().toISOString(),
+      updatedAt:   new Date().toISOString()
+    };
+
+    this.state.tasks = Storage.add(newTask);
+    Notifications.scheduleLocal(newTask);
+    this._closeManagerTypeSheet();
+    this._renderPipeline();
+    this._updatePipelineBadge();
+    this.showToast('Task added!');
+  },
+
+  _startManagerSpeak() {
+    if (!this.state.activePersonId) return;
+    const myId = Auth.profile?.id;
+    this.state.voiceContext = this.state.activePersonId === myId ? 'me-speak' : 'fab';
+    this.voice.start();
+  },
+
   _updatePipelineFAB() {
-    const wrapper = document.getElementById('pipeline-fab-wrapper');
-    const label   = document.getElementById('pipeline-fab-label');
-    const pid     = this.state.activePersonId;
-    const member  = this.state.team.find(m => m.id === pid);
+    const dial  = document.getElementById('pipeline-fab');
+    const label = document.getElementById('pipeline-fab-label');
+    const pid   = this.state.activePersonId;
+    const myId  = Auth.profile?.id;
+    const isMe  = pid === myId;
+    const member = isMe
+      ? { id: myId, full_name: 'Me', _isMe: true }
+      : this.state.team.find(m => m.id === pid);
     if (member) {
-      wrapper?.classList.remove('hidden');
-      if (label) label.textContent = `For ${member.full_name}`;
+      dial?.classList.remove('hidden');
+      if (label) label.textContent = isMe ? 'Personal task' : `For ${member.full_name}`;
     } else {
-      wrapper?.classList.add('hidden');
+      dial?.classList.add('hidden');
+      dial?.classList.remove('open');
+      document.getElementById('pipeline-fab-backdrop')?.classList.remove('open');
     }
   },
 
@@ -405,46 +556,62 @@ const App = {
     });
 
     document.addEventListener('voice:start', () => {
-      if (this.state.voiceContext === 'fab') {
-        this._setPipelineFABState('listening');
-      } else {
-        this._setMicState('listening');
-        clearTimeout(this._overlayCloseTimer);
-        this._setVoiceOverlayPhase('listening');
-        this._showVoiceOverlay(true, 'Listening…');
-      }
+      this._setMicState('listening');
+      clearTimeout(this._overlayCloseTimer);
+      this._setVoiceOverlayPhase('listening');
+      this._showVoiceOverlay(true, 'Listening…');
     });
 
     document.addEventListener('voice:interim', e => {
-      if (this.state.voiceContext === 'fab') return;
       if (e.detail) this._showVoiceOverlay(true, `“${e.detail}”`);
     });
 
     document.addEventListener('voice:result', async e => {
       const transcript = e.detail;
-      const isFAB = this.state.voiceContext === 'fab';
+      const ctx = this.state.voiceContext;
       this.state.voiceContext = 'general';
 
-      if (!isFAB) {
-        this._setMicState('processing');
-        this._showVoiceOverlay(true, `“${transcript}”`);
-        this._setVoiceOverlayPhase('processing');
-      } else {
-        this._setPipelineFABState('processing');
-      }
+      this._setMicState('processing');
+      this._showVoiceOverlay(true, `“${transcript}”`);
+      this._setVoiceOverlayPhase('processing');
 
       try {
-        let tasks = await Parser.parse(transcript, this.state.team);
+        const myId = Auth.profile?.id;
+        let tasks;
 
-        // Pipeline FAB: override assignee with the active tab's member
-        if (isFAB && this.state.activePersonId) {
-          const member = this.state.team.find(m => m.id === this.state.activePersonId);
-          if (member) {
-            tasks = tasks.map(t => ({
-              ...t,
-              assignee:    member.full_name,
-              assignee_id: member.id
-            }));
+        if (ctx === 'me-speak') {
+          // Manager dictating personal task on Me chip
+          tasks = await Parser.parseSimple(transcript);
+          tasks = tasks.map(t => ({
+            ...t,
+            assignee:    Auth.profile.full_name,
+            assignee_id: myId,
+            assigner_id: myId,
+            added_by:    myId
+          }));
+        } else if (ctx === 'assignee-speak') {
+          // Team member dictating; assigner = active manager (or self if Me chip)
+          tasks = await Parser.parseSimple(transcript);
+          const targetAssigner = this.state.activeAssignerId || myId;
+          tasks = tasks.map(t => ({
+            ...t,
+            assignee:    Auth.profile.full_name,
+            assignee_id: myId,
+            assigner_id: targetAssigner,
+            added_by:    myId
+          }));
+        } else {
+          // Manager Home mic or FAB on a team member
+          tasks = await Parser.parse(transcript, this.state.team);
+          if (ctx === 'fab' && this.state.activePersonId) {
+            const member = this.state.team.find(m => m.id === this.state.activePersonId);
+            if (member) {
+              tasks = tasks.map(t => ({
+                ...t,
+                assignee:    member.full_name,
+                assignee_id: member.id
+              }));
+            }
           }
         }
 
@@ -458,22 +625,27 @@ const App = {
           Notifications.scheduleLocal(task);
         });
 
-        if (!isFAB) this._showVoiceOverlayResult(tasks);
+        this._showVoiceOverlayResult(tasks);
 
-        const activeMember = isFAB ? this.state.team.find(m => m.id === this.state.activePersonId) : null;
-        const msg = activeMember
-          ? `Task${tasks.length > 1 ? 's' : ''} assigned to ${activeMember.full_name}!`
-          : (tasks.length > 1 ? `${tasks.length} tasks saved!` : 'Task saved!');
+        let msg;
+        if (ctx === 'me-speak' || ctx === 'assignee-speak') {
+          msg = tasks.length > 1 ? `${tasks.length} tasks saved!` : 'Task saved!';
+        } else {
+          const activeMember = ctx === 'fab' ? this.state.team.find(m => m.id === this.state.activePersonId) : null;
+          msg = activeMember
+            ? `Task${tasks.length > 1 ? 's' : ''} assigned to ${activeMember.full_name}!`
+            : (tasks.length > 1 ? `${tasks.length} tasks saved!` : 'Task saved!');
+        }
         this.showToast(msg);
         this._refreshCurrentPage();
         this._updatePipelineBadge();
+        this._updateAssigneeBadge();
       } catch (err) {
         this._showVoiceOverlay(false);
         this._setVoiceOverlayPhase('listening');
         this.showToast(err.message || 'Could not parse task. Try again.', true);
       } finally {
         this._setMicState('idle');
-        this._setPipelineFABState('idle');
       }
     });
 
@@ -483,13 +655,9 @@ const App = {
       this._setVoiceOverlayPhase('listening');
       this.showToast(e.detail, true);
       this._setMicState('idle');
-      this._setPipelineFABState('idle');
     });
 
     document.addEventListener('voice:end', () => {
-      if (this.state.voiceContext === 'fab') return;
-      // Only dismiss if nothing was said — otherwise the overlay stays up
-      // through the processing/saved phases
       if (!this.voice._transcript?.trim()) {
         this._showVoiceOverlay(false);
         this._setMicState('idle');
@@ -946,14 +1114,26 @@ const App = {
       }
     });
 
-    // Add task form
-    document.getElementById('assignee-add-task-btn')?.addEventListener('click', () => {
-      this.state.showAssigneeAddForm = !this.state.showAssigneeAddForm;
-      if (formSlot) {
-        formSlot.innerHTML = this.state.showAssigneeAddForm
-          ? renderAssigneeAddTaskForm(this.state.assigners, this.state.activeAssignerId)
-          : '';
+    // FAB speed dial — trigger toggle
+    const fabDial = document.getElementById('assignee-fab');
+    fabDial?.querySelector('.fab-trigger')?.addEventListener('click', () => {
+      this._toggleAssigneeFAB();
+    });
+    fabDial?.querySelector('.fab-actions')?.addEventListener('click', e => {
+      const pill = e.target.closest('.fab-pill');
+      if (!pill) return;
+      const action = pill.dataset.fabAction;
+      this._toggleAssigneeFAB(false);
+      if (action === 'type') {
+        this.state.showAssigneeAddForm = true;
+        if (formSlot) formSlot.innerHTML = renderAssigneeAddTaskForm(this.state.assigners, this.state.activeAssignerId);
+      } else if (action === 'speak') {
+        this.state.voiceContext = 'assignee-speak';
+        this.voice.start();
       }
+    });
+    document.getElementById('assignee-fab-backdrop')?.addEventListener('click', () => {
+      this._toggleAssigneeFAB(false);
     });
 
     document.getElementById('assignee-app')?.addEventListener('click', async e => {
@@ -1126,27 +1306,13 @@ const App = {
     }
   },
 
-  _setPipelineFABState(state) {
-    const btn     = document.getElementById('pipeline-fab-btn');
-    const micSvg  = document.getElementById('pipeline-fab-mic');
-    const stopSvg = document.getElementById('pipeline-fab-stop');
-    const spinner = document.getElementById('pipeline-fab-spinner');
-    if (!btn) return;
-
-    btn.className = 'pipeline-fab-btn';
-    micSvg?.classList.remove('hidden');
-    stopSvg?.classList.add('hidden');
-    spinner?.classList.add('hidden');
-
-    if (state === 'listening') {
-      btn.classList.add('pipeline-fab-btn--listening');
-      micSvg?.classList.add('hidden');
-      stopSvg?.classList.remove('hidden');
-    } else if (state === 'processing') {
-      btn.classList.add('pipeline-fab-btn--processing');
-      micSvg?.classList.add('hidden');
-      spinner?.classList.remove('hidden');
-    }
+  _toggleAssigneeFAB(open) {
+    const dial = document.getElementById('assignee-fab');
+    const backdrop = document.getElementById('assignee-fab-backdrop');
+    if (!dial) return;
+    const next = open !== undefined ? open : !dial.classList.contains('open');
+    dial.classList.toggle('open', next);
+    backdrop?.classList.toggle('open', next);
   },
 
   // ── Preview card ───────────────────────────────────────────────────────────

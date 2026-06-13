@@ -157,9 +157,11 @@ CREATE POLICY "invites_assignee_accept" ON public.invites
 
 
 -- ── assigner_assignee_map policies ────────────────────────────────────────────
-DROP POLICY IF EXISTS "map_assigner_read"   ON public.assigner_assignee_map;
-DROP POLICY IF EXISTS "map_assignee_read"   ON public.assigner_assignee_map;
+DROP POLICY IF EXISTS "map_assigner_read"    ON public.assigner_assignee_map;
+DROP POLICY IF EXISTS "map_assignee_read"    ON public.assigner_assignee_map;
 DROP POLICY IF EXISTS "map_insert_on_accept" ON public.assigner_assignee_map;
+DROP POLICY IF EXISTS "map_assigner_delete"  ON public.assigner_assignee_map;
+DROP POLICY IF EXISTS "map_assignee_delete"  ON public.assigner_assignee_map;
 
 CREATE POLICY "map_assigner_read" ON public.assigner_assignee_map
   FOR SELECT TO authenticated USING (assigner_id = auth.uid());
@@ -169,6 +171,13 @@ CREATE POLICY "map_assignee_read" ON public.assigner_assignee_map
 
 CREATE POLICY "map_insert_on_accept" ON public.assigner_assignee_map
   FOR INSERT TO authenticated WITH CHECK (assignee_id = auth.uid());
+
+-- DELETE: managers can remove team members; team members can unlink themselves
+CREATE POLICY "map_assigner_delete" ON public.assigner_assignee_map
+  FOR DELETE TO authenticated USING (assigner_id = auth.uid());
+
+CREATE POLICY "map_assignee_delete" ON public.assigner_assignee_map
+  FOR DELETE TO authenticated USING (assignee_id = auth.uid());
 
 
 -- ── tasks policies ────────────────────────────────────────────────────────────

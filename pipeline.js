@@ -126,28 +126,13 @@ function renderPipelinePage(tasks, activePersonId, editMode, showAddPerson, pinn
     pipelineSection('Today',    'today',    sortAsc(groupToday),    null),
     pipelineSection('Upcoming', 'upcoming', sortAsc(groupUpcoming), null),
     pipelineSection('No Date',  'nodate',   groupNoDate,            null),
-    pipelineSection('Done',     'done',     sortDesc(groupDone),    'No completed tasks'),
+    pipelineSection('Done',     'done',     sortDesc(groupDone),    null),
   ].join('');
 
-  const addFormTitle = isMeActive
-    ? 'Add a personal task'
-    : `Add task for ${escapeHTML(member?.full_name || '')}`;
-  const addFormHTML = editMode ? `
-    <div class="add-task-form">
-      <p class="add-task-title">${addFormTitle}</p>
-      <input type="text" id="add-task-desc"  class="add-task-input" placeholder="Task description…" autocomplete="off"/>
-      <label class="add-task-field-label" for="add-task-date">Date</label>
-      <input type="date" id="add-task-date"  class="add-task-date"/>
-      <label class="add-task-field-label" for="add-task-time">Time</label>
-      <input type="time" id="add-task-time"  class="add-task-date"/>
-      <button id="add-task-submit" class="add-task-btn">Add Task</button>
-    </div>
-  ` : '';
-
   const emptyMsg = isMeActive
-    ? 'No personal tasks yet. Tap Edit to add one.'
-    : 'No tasks for this person yet.';
-  mainEl.innerHTML = (sectionsHTML || `<div class="empty-section">${emptyMsg}</div>`) + addFormHTML;
+    ? 'No personal tasks yet. Tap + to add one.'
+    : 'No tasks for this person yet. Tap + to add one.';
+  mainEl.innerHTML = sectionsHTML || `<div class="empty-section">${emptyMsg}</div>`;
   return personId;
 }
 
