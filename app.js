@@ -607,18 +607,28 @@ const App = {
       const addBtn     = e.target.closest('#add-person-btn');
 
       if (deleteTab) {
-        const pid = deleteTab.dataset.personId;
-        // Remove from team: delete from assigner_assignee_map + remove tasks from local
-        if (!confirm(`Remove this person from your team? Their tasks will be deleted.`)) return;
+        const pid    = deleteTab.dataset.personId;
+        const member = this.state.team.find(m => m.id === pid);
+        const name   = member?.full_name || 'this person';
+        if (!confirm(`Remove ${name} from your team? All tasks between you two will be deleted.`)) return;
         if (SupabaseClient && Auth.profile) {
+          // Unlink. Other managers linked to this person stay unaffected.
           await SupabaseClient.from('assigner_assignee_map')
+            .delete().eq('assigner_id', Auth.profile.id).eq('assignee_id', pid);
+          // Delete every task between us — covers tasks I created AND tasks
+          // they self-added under me (the diff-delete in sync wouldn't catch
+          // the latter because it scopes to added_by=me)
+          await SupabaseClient.from('tasks')
             .delete().eq('assigner_id', Auth.profile.id).eq('assignee_id', pid);
         }
         this.state.team = this.state.team.filter(m => m.id !== pid);
         this.state.tasks = this.state.tasks.filter(t => t.assignee_id !== pid);
         this.state.nameMap = Object.fromEntries(this.state.team.map(m => [m.id, m.full_name]));
+        localStorage.setItem(CONFIG.STORAGE_KEY, JSON.stringify(this.state.tasks));
         if (this.state.activePersonId === pid) this.state.activePersonId = null;
         this._renderPipeline();
+        this._updatePipelineBadge();
+        this.showToast(`${name} removed from your team`);
         return;
       }
 
