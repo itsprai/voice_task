@@ -523,6 +523,16 @@ body::before {
 .task-date--overdue { color: var(--danger) !important; font-weight: 600; }
 .task-self-added { font-size: 11px; color: var(--primary); opacity: 0.75; margin-top: 3px; font-style: italic; }
 .task-added-at   { font-size: 11px; color: var(--muted); margin-top: 3px; }
+.task-recur-chip {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: 11px; font-weight: 600;
+  color: var(--primary); background: var(--primary-soft);
+  padding: 2px 8px; border-radius: 100px;
+  margin-top: 4px;
+}
+.task-recur-chip svg { flex-shrink: 0; }
+
+.chip--recur { background: var(--primary-soft); color: var(--primary); }
 
 .delete-btn { background: none; border: none; color: #cbd5e1; cursor: pointer; font-size: 16px; padding: 4px 2px; flex-shrink: 0; transition: color 0.15s; }
 .delete-btn:active { color: var(--danger); }

@@ -584,6 +584,9 @@ const App = {
     if (!member) return;
 
     const ctx = isMe ? 'Personal task' : `For <strong>${escapeHTML(member.full_name)}</strong>`;
+    const recurOpts = RECURRENCE_OPTIONS.map(o =>
+      `<option value="${o.value}">${escapeHTML(o.label)}</option>`
+    ).join('');
     slot.innerHTML = `
       <div class="sheet-backdrop" data-close-sheet></div>
       <div class="sheet">
@@ -595,6 +598,8 @@ const App = {
         <input type="date" id="add-task-date" class="add-task-date"/>
         <label class="add-task-field-label" for="add-task-time">Time</label>
         <input type="time" id="add-task-time" class="add-task-date"/>
+        <label class="add-task-field-label" for="add-task-recurrence">Repeat</label>
+        <select id="add-task-recurrence" class="add-task-input add-task-select">${recurOpts}</select>
         <button id="add-task-submit" class="add-task-btn" data-target-id="${member.id}">Add Task</button>
       </div>
     `;
@@ -624,6 +629,7 @@ const App = {
 
     const _date = dateInput.value || new Date().toISOString().split('T')[0];
     const _time = timeInput?.value || new Date().toTimeString().slice(0, 5);
+    const _recur = document.getElementById('add-task-recurrence')?.value || 'none';
 
     const newTask = {
       id:          crypto.randomUUID(),
@@ -637,6 +643,7 @@ const App = {
       time:        _time,
       dueAt:       new Date(`${_date}T${_time}`).getTime(),
       status:      'pending',
+      recurrence:  _recur,
       createdAt:   new Date().toISOString(),
       updatedAt:   new Date().toISOString()
     };
@@ -646,7 +653,28 @@ const App = {
     this._closeManagerTypeSheet();
     this._renderPipeline();
     this._updatePipelineBadge();
-    this.showToast('Task added!');
+    this.showToast(_recur !== 'none' ? `Recurring task added (${recurrenceLabel(_recur).toLowerCase()})` : 'Task added!');
+  },
+
+  // When a recurring task gets marked complete, create the next instance.
+  // Skips silently for non-recurring tasks.
+  _maybeGenerateNextRecurrence(task) {
+    if (!task || !task.recurrence || task.recurrence === 'none') return;
+    const next = nextDueDateForRecurrence(task.dueDate, task.time, task.recurrence);
+    if (!next) return;
+    const nowIso  = new Date().toISOString();
+    const nextTask = {
+      ...task,
+      id:          crypto.randomUUID(),
+      status:      'pending',
+      dueDate:     next.dueDate,
+      time:        next.time,
+      dueAt:       next.dueDate && next.time ? new Date(`${next.dueDate}T${next.time}`).getTime() : null,
+      createdAt:   nowIso,
+      updatedAt:   nowIso
+    };
+    this.state.tasks = Storage.add(nextTask);
+    Notifications.scheduleLocal(nextTask);
   },
 
   _startManagerSpeak() {
@@ -709,15 +737,18 @@ const App = {
     if (!result) return;
     result.innerHTML = `
       <p class="preview-label">✓ ${tasks.length > 1 ? tasks.length + ' tasks saved' : 'Task saved'}</p>
-      ${tasks.map(t => `
+      ${tasks.map(t => {
+        const recurLbl = recurrenceLabel(t.recurrence);
+        return `
         <div class="preview-item">
           <p class="preview-desc">${escapeHTML(t.description)}</p>
           <div class="preview-meta">
             <span class="chip chip--assignee">${escapeHTML(t.assignee)}</span>
             ${t.dueDate ? `<span class="chip chip--date">${formatDate(t.dueDate)}${t.time ? ' · ' + formatTime(t.time) : ''}</span>` : ''}
+            ${recurLbl ? `<span class="chip chip--recur">↻ ${escapeHTML(recurLbl)}</span>` : ''}
           </div>
         </div>
-      `).join('')}
+      `; }).join('')}
     `;
     this._setVoiceOverlayPhase('saved');
     clearTimeout(this._overlayCloseTimer);
@@ -875,8 +906,12 @@ const App = {
         if (task) {
           const next = task.status === 'completed' ? 'pending' : 'completed';
           this.state.tasks = Storage.update(task.id, { status: next });
-          if (next === 'completed') Notifications.cancelLocal(task.id);
-          else Notifications.scheduleLocal({ ...task, status: 'pending' });
+          if (next === 'completed') {
+            Notifications.cancelLocal(task.id);
+            this._maybeGenerateNextRecurrence(task);
+          } else {
+            Notifications.scheduleLocal({ ...task, status: 'pending' });
+          }
           this._refreshCurrentPage();
         }
       }
@@ -1154,8 +1189,12 @@ const App = {
         if (task) {
           const next = task.status === 'completed' ? 'pending' : 'completed';
           this.state.tasks = Storage.update(task.id, { status: next });
-          if (next === 'completed') Notifications.cancelLocal(task.id);
-          else Notifications.scheduleLocal({ ...task, status: 'pending' });
+          if (next === 'completed') {
+            Notifications.cancelLocal(task.id);
+            this._maybeGenerateNextRecurrence(task);
+          } else {
+            Notifications.scheduleLocal({ ...task, status: 'pending' });
+          }
           this._renderPipeline();
           this._updatePipelineBadge();
         }
@@ -1258,8 +1297,12 @@ const App = {
         if (task) {
           const next = task.status === 'completed' ? 'pending' : 'completed';
           this.state.tasks = Storage.update(task.id, { status: next });
-          if (next === 'completed') Notifications.cancelLocal(task.id);
-          else Notifications.scheduleLocal({ ...task, status: 'pending' });
+          if (next === 'completed') {
+            Notifications.cancelLocal(task.id);
+            this._maybeGenerateNextRecurrence(task);
+          } else {
+            Notifications.scheduleLocal({ ...task, status: 'pending' });
+          }
           renderAssigneeTasksPage(this.state.tasks, this.state.assigners, this.state.editingAssigneeTaskId);
           this._updateAssigneeBadge();
         }
@@ -1331,8 +1374,9 @@ const App = {
       const desc       = descInput?.value.trim();
       if (!desc || !assignerId) { descInput?.focus(); return; }
 
-      const _date = dateInput.value || new Date().toISOString().split('T')[0];
-      const _time = timeInput?.value || new Date().toTimeString().slice(0, 5);
+      const _date  = dateInput.value || new Date().toISOString().split('T')[0];
+      const _time  = timeInput?.value || new Date().toTimeString().slice(0, 5);
+      const _recur = document.getElementById('add-assignee-task-recurrence')?.value || 'none';
 
       const newTask = {
         id:          crypto.randomUUID(),
@@ -1346,6 +1390,7 @@ const App = {
         time:        _time,
         dueAt:       new Date(`${_date}T${_time}`).getTime(),
         status:      'pending',
+        recurrence:  _recur,
         createdAt:   new Date().toISOString(),
         updatedAt:   new Date().toISOString()
       };
@@ -1356,7 +1401,7 @@ const App = {
       if (formSlot) formSlot.innerHTML = '';
       renderAssigneeTasksPage(this.state.tasks, this.state.assigners, null);
       this._updateAssigneeBadge();
-      this.showToast('Task added!');
+      this.showToast(_recur !== 'none' ? `Recurring task added (${recurrenceLabel(_recur).toLowerCase()})` : 'Task added!');
     });
   },
 

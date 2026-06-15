@@ -74,6 +74,86 @@ function isPersonalTask(t, userId) {
   return userId && t.assigner_id === userId && t.assignee_id === userId;
 }
 
+// ── Recurrence helpers ────────────────────────────────────────────────────────
+
+const RECURRENCE_OPTIONS = [
+  { value: 'none',         label: 'Never' },
+  { value: 'hourly',       label: 'Hourly' },
+  { value: 'daily',        label: 'Daily' },
+  { value: 'weekdays',     label: 'Weekdays' },
+  { value: 'weekends',     label: 'Weekends' },
+  { value: 'weekly',       label: 'Weekly' },
+  { value: 'fortnightly',  label: 'Fortnightly' },
+  { value: 'monthly',      label: 'Monthly' },
+  { value: 'quarterly',    label: 'Every 3 months' },
+  { value: 'biannually',   label: 'Every 6 months' },
+  { value: 'yearly',       label: 'Yearly' }
+];
+
+function recurrenceLabel(value) {
+  const found = RECURRENCE_OPTIONS.find(o => o.value === value);
+  return found ? found.label : '';
+}
+
+function _pad2(n) { return String(n).padStart(2, '0'); }
+function _fmtDateISO(d) { return `${d.getFullYear()}-${_pad2(d.getMonth() + 1)}-${_pad2(d.getDate())}`; }
+
+function _addMonthsClamp(date, count) {
+  const originalDay = date.getDate();
+  date.setMonth(date.getMonth() + count);
+  // Jan 31 → Feb has no 31st → JS rolls to Mar 3. Detect and clamp to last day of target month.
+  if (date.getDate() !== originalDay) date.setDate(0);
+}
+
+// Given a task that just completed, compute the next instance's dueDate + time.
+// Returns null if recurrence === 'none' or unknown.
+// Anchored to max(today, originalDueDate) so a late-completed task doesn't fire
+// catch-up reminders for missed days.
+function nextDueDateForRecurrence(currentDueDate, currentTime, recurrence) {
+  if (!recurrence || recurrence === 'none') return null;
+
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const due   = parseDate(currentDueDate);
+  const anchorMs = Math.max(today.getTime(), due ? due.getTime() : today.getTime());
+  const next = new Date(anchorMs);
+  let nextTime = currentTime || '';
+
+  switch (recurrence) {
+    case 'hourly': {
+      const [h, m] = (currentTime || '00:00').split(':').map(Number);
+      next.setHours((isNaN(h) ? 0 : h), (isNaN(m) ? 0 : m), 0, 0);
+      next.setHours(next.getHours() + 1);
+      nextTime = `${_pad2(next.getHours())}:${_pad2(next.getMinutes())}`;
+      break;
+    }
+    case 'daily':
+      next.setDate(next.getDate() + 1);
+      break;
+    case 'weekdays': {
+      next.setDate(next.getDate() + 1);
+      const day = next.getDay();
+      if (day === 6)       next.setDate(next.getDate() + 2); // Sat → Mon
+      else if (day === 0)  next.setDate(next.getDate() + 1); // Sun → Mon
+      break;
+    }
+    case 'weekends': {
+      next.setDate(next.getDate() + 1);
+      const day = next.getDay();
+      if (day >= 1 && day <= 5) next.setDate(next.getDate() + (6 - day)); // Mon-Fri → Sat
+      break;
+    }
+    case 'weekly':       next.setDate(next.getDate() + 7);  break;
+    case 'fortnightly':  next.setDate(next.getDate() + 14); break;
+    case 'monthly':      _addMonthsClamp(next, 1);  break;
+    case 'quarterly':    _addMonthsClamp(next, 3);  break;
+    case 'biannually':   _addMonthsClamp(next, 6);  break;
+    case 'yearly':       next.setFullYear(next.getFullYear() + 1); break;
+    default: return null;
+  }
+
+  return { dueDate: _fmtDateISO(next), time: nextTime };
+}
+
 function escapeHTML(str) {
   if (str == null) return '';
   return String(str)
@@ -191,6 +271,7 @@ function taskCardHTML(task, nameMap = {}, opts = {}) {
   const metaParts   = [displayName, dateTime].filter(Boolean);
 
   const createdLabel = formatCreatedAt(task.createdAt);
+  const recurLabel   = recurrenceLabel(task.recurrence);
 
   return `
     <div class="task-card ${cardClass}">
@@ -200,6 +281,7 @@ function taskCardHTML(task, nameMap = {}, opts = {}) {
       <div class="task-body">
         <div class="task-desc ${isCompleted ? 'task-desc--done' : ''}">${escapeHTML(task.description)}</div>
         ${metaParts.length ? `<div class="task-date ${dateClass}">${metaParts.map(escapeHTML).join(' · ')}</div>` : ''}
+        ${recurLabel ? `<div class="task-recur-chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="10" height="10"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>${escapeHTML(recurLabel)}</div>` : ''}
         ${createdLabel ? `<div class="task-added-at">Added ${escapeHTML(createdLabel)}</div>` : ''}
         ${selfAdded ? `<div class="task-self-added">Added by assignee</div>` : ''}
       </div>

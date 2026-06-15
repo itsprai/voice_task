@@ -174,6 +174,7 @@ function pipelineCardHTML(task, editMode, editingTaskId) {
   ` : '';
 
   const createdLabel = formatCreatedAt(task.createdAt);
+  const recurLabel   = recurrenceLabel(task.recurrence);
 
   return `
     <div class="pipeline-card ${isOverdue ? 'pipeline-card--overdue' : ''}">
@@ -183,6 +184,7 @@ function pipelineCardHTML(task, editMode, editingTaskId) {
       <div class="pipeline-card-info">
         <div class="pipeline-card-desc ${isCompleted ? 'pipeline-card-desc--done' : ''}">${escapeHTML(task.description)}</div>
         ${dateTime ? `<div class="pipeline-card-date ${isOverdue ? 'pipeline-card-date--overdue' : isToday ? 'pipeline-card-date--today' : ''}">${dateTime}</div>` : ''}
+        ${recurLabel ? `<div class="task-recur-chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="10" height="10"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>${escapeHTML(recurLabel)}</div>` : ''}
         ${createdLabel ? `<div class="task-added-at">Added ${escapeHTML(createdLabel)}</div>` : ''}
         ${selfAdded ? `<div class="pipeline-card-self-added">Added by assignee</div>` : ''}
       </div>

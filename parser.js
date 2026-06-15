@@ -25,7 +25,27 @@ Today is ${todayLabel} (${todayISO}). Current time is ${currentTime}.
 
 The manager's team: ${teamNames}. Team-member names must match this list exactly (case-insensitive).
 
-Extract EVERY task mentioned. Each task has its OWN assignee, date, and time.
+Extract EVERY task mentioned. Each task has its OWN assignee, date, time, and recurrence.
+
+RECURRENCE — set "recurrence" based on speech cues:
+- "every day", "daily", "each morning/night/evening" → "daily"
+- "every weekday", "Mon-Fri", "on weekdays" → "weekdays"
+- "every weekend", "on weekends" → "weekends"
+- "weekly", "every week", "every Monday/Tuesday/Sunday/etc" → "weekly"
+- "biweekly", "fortnightly", "every two weeks", "every other week" → "fortnightly"
+- "monthly", "every month", "each month" → "monthly"
+- "quarterly", "every 3 months", "each quarter" → "quarterly"
+- "every 6 months", "twice a year", "semi-annually" → "biannually"
+- "yearly", "annually", "every year" → "yearly"
+- "hourly", "every hour" → "hourly"
+- NO recurrence cue → "none"
+
+Do NOT confuse a one-off deadline with recurrence:
+- "by Monday" / "by Friday" → deadline, recurrence="none"
+- "this Tuesday at 5pm" / "tomorrow morning" → one-off, recurrence="none"
+- "every Monday" / "on Mondays at 5pm" → recurring, recurrence="weekly"
+- "remind me to call mom tonight" → one-off, recurrence="none"
+- "remind me to call mom every night" → recurring, recurrence="daily"
 
 ASSIGNEE — read CAREFULLY:
 - The assignee is the PERSON WHO MUST DO the task, NOT the recipient of an outcome.
@@ -45,18 +65,19 @@ CRITICAL — do NOT confuse "me" appearing inside a delegated task with a self-t
 Whenever a delegation phrase ("ask/tell/have/get/assign X to") is present, the assignee is X — regardless of how many times "me" appears later in the sentence.
 
 For each task return:
-- "description": imperative phrase. Strip "remind me to", "I need to", "I have to" when assignee is "Me".
+- "description": imperative phrase. Strip "remind me to", "I need to", "I have to" when assignee is "Me". Strip recurrence words ("every day", "weekly", etc.) from description.
 - "assignee": "Me" for self-tasks, or a team member's name (title case) for delegated tasks.
-- "dueDate": resolve relative dates to YYYY-MM-DD. Use ${todayISO} if no date mentioned.
+- "dueDate": resolve relative dates to YYYY-MM-DD. Use ${todayISO} if no date mentioned. For recurring tasks, this is the FIRST occurrence's date.
   * "today" = ${todayISO}, "tomorrow" = next day
   * "this [weekday]" = upcoming occurrence, "next [weekday]" = next week
   * "end of week" = this Friday
 - "time": extract time in HH:MM (24-hour). Use ${currentTime} if no time mentioned.
   * "3pm" = "15:00", "9am" = "09:00", "noon" = "12:00"
   * "morning" = "09:00", "afternoon" = "14:00", "evening" = "18:00"
+- "recurrence": one of "none", "hourly", "daily", "weekdays", "weekends", "weekly", "fortnightly", "monthly", "quarterly", "biannually", "yearly". See RECURRENCE rules above. Default "none".
 
 Return a JSON object:
-{"tasks": [{"description": "string", "assignee": "string", "dueDate": "YYYY-MM-DD", "time": "HH:MM"}]}
+{"tasks": [{"description": "string", "assignee": "string", "dueDate": "YYYY-MM-DD", "time": "HH:MM", "recurrence": "string"}]}
 
 If no task found:
 {"tasks": [], "error": "Could not understand the task. Please speak again."}`;
@@ -105,12 +126,14 @@ If no task found:
     const myId       = Auth.profile?.id ?? null;
     const myName     = Auth.profile?.full_name ?? 'Me';
     const selfRefs   = ['me', 'myself', 'i', 'self'];
+    const validRecur = ['none','hourly','daily','weekdays','weekends','weekly','fortnightly','monthly','quarterly','biannually','yearly'];
 
     for (const t of tasks) {
       if (!t.description || !t.assignee) continue;
 
       const assigneeRaw = t.assignee.trim();
       const isSelf = selfRefs.includes(assigneeRaw.toLowerCase());
+      const recurrence = validRecur.includes(t.recurrence) ? t.recurrence : 'none';
 
       if (isSelf) {
         // Personal task — assigner & assignee both the current user
@@ -125,6 +148,7 @@ If no task found:
           dueDate:     t.dueDate || todayISO,
           time:        t.time    || currentTime,
           status:      'pending',
+          recurrence,
           createdAt,
           updatedAt:   createdAt
         });
@@ -148,6 +172,7 @@ If no task found:
         dueDate:     t.dueDate || todayISO,
         time:        t.time    || currentTime,
         status:      'pending',
+        recurrence,
         createdAt,
         updatedAt:   createdAt
       });
@@ -170,14 +195,21 @@ If no task found:
 Today is ${todayLabel} (${todayISO}). Current time is ${currentTime}.
 
 Extract every task mentioned. For each:
-- "description": imperative phrase. Strip "remind me to", "I need to", "I have to".
-- "dueDate": YYYY-MM-DD. Use ${todayISO} if no date.
+- "description": imperative phrase. Strip "remind me to", "I need to", "I have to", and recurrence words from description.
+- "dueDate": YYYY-MM-DD. Use ${todayISO} if no date. For recurring tasks this is the FIRST occurrence.
   - "today"=${todayISO}, "tomorrow"=next day, "this/next [weekday]", "end of week"=Friday.
 - "time": HH:MM 24-hour. Use ${currentTime} if no time.
   - "3pm"=15:00, "noon"=12:00, "morning"=09:00, "afternoon"=14:00, "evening"=18:00.
+- "recurrence": one of "none","hourly","daily","weekdays","weekends","weekly","fortnightly","monthly","quarterly","biannually","yearly". Detection cues:
+  - "every day"/"daily"→daily, "every weekday"→weekdays, "every weekend"→weekends, "weekly"/"every Monday/Tuesday/etc"→weekly,
+  - "fortnightly"/"biweekly"/"every two weeks"→fortnightly, "monthly"/"every month"→monthly,
+  - "quarterly"/"every 3 months"→quarterly, "every 6 months"/"semi-annually"→biannually,
+  - "yearly"/"annually"→yearly, "hourly"/"every hour"→hourly.
+  - "by Friday"/"this Tuesday"/"tomorrow" are one-off deadlines → recurrence="none".
+  - Default "none" when no clear recurring cue.
 
 JSON only:
-{"tasks":[{"description":"...","dueDate":"YYYY-MM-DD","time":"HH:MM"}]}
+{"tasks":[{"description":"...","dueDate":"YYYY-MM-DD","time":"HH:MM","recurrence":"..."}]}
 
 If nothing usable: {"tasks":[],"error":"Could not understand. Please speak again."}`;
 
@@ -216,6 +248,7 @@ If nothing usable: {"tasks":[],"error":"Could not understand. Please speak again
     if (!tasks.length) throw new Error('Could not understand the task. Please speak again.');
 
     const createdAt = new Date().toISOString();
+    const validRecur = ['none','hourly','daily','weekdays','weekends','weekly','fortnightly','monthly','quarterly','biannually','yearly'];
     return tasks.map(t => ({
       id:          crypto.randomUUID(),
       raw:         transcript,
@@ -227,6 +260,7 @@ If nothing usable: {"tasks":[],"error":"Could not understand. Please speak again
       dueDate:     t.dueDate  || todayISO,
       time:        t.time     || currentTime,
       status:      'pending',
+      recurrence:  validRecur.includes(t.recurrence) ? t.recurrence : 'none',
       createdAt,
       updatedAt:   createdAt
     }));

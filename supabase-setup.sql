@@ -74,7 +74,14 @@ CREATE TABLE IF NOT EXISTS public.tasks (
 ALTER TABLE public.tasks
   ADD COLUMN IF NOT EXISTS assigner_id UUID REFERENCES public.profiles(id),
   ADD COLUMN IF NOT EXISTS assignee_id UUID REFERENCES public.profiles(id),
-  ADD COLUMN IF NOT EXISTS added_by    UUID REFERENCES public.profiles(id);
+  ADD COLUMN IF NOT EXISTS added_by    UUID REFERENCES public.profiles(id),
+  ADD COLUMN IF NOT EXISTS recurrence  TEXT NOT NULL DEFAULT 'none';
+
+-- One-time CHECK constraint for recurrence values (re-runnable: dropped + readded)
+ALTER TABLE public.tasks DROP CONSTRAINT IF EXISTS tasks_recurrence_check;
+ALTER TABLE public.tasks
+  ADD CONSTRAINT tasks_recurrence_check
+  CHECK (recurrence IN ('none','hourly','daily','weekdays','weekends','weekly','fortnightly','monthly','quarterly','biannually','yearly'));
 
 CREATE INDEX IF NOT EXISTS idx_tasks_assigner ON public.tasks (assigner_id);
 CREATE INDEX IF NOT EXISTS idx_tasks_assignee ON public.tasks (assignee_id);
