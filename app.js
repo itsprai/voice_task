@@ -78,6 +78,13 @@ const App = {
         return;
       }
 
+      // Tap the notes preview row on a task card to expand/collapse full text
+      const notesPrev = e.target.closest('.task-notes-preview');
+      if (notesPrev) {
+        notesPrev.classList.toggle('task-notes-preview--expanded');
+        return;
+      }
+
       // ─ Subtask interactions ────────────────────────────────────────
       // Toggle a subtask checkbox on a rendered task card
       const subCheck = e.target.closest('.subtask-check');

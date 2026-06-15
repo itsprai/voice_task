@@ -246,18 +246,22 @@ function makeSubtaskRow(text = '', done = false) {
   return row;
 }
 
-// Small inline clipboard icon + 1-line preview of notes.
+// Notes preview rendered on every task card. Multi-line clamp by default (2 lines);
+// tap toggles the .task-notes-preview--expanded class to reveal the full text.
+// Full notes always live in the DOM — CSS handles the clamp.
 function notesPreviewHTML(task) {
   const notes = (task?.notes ?? '').trim();
   if (!notes) return '';
-  const preview = notes.length > 80 ? notes.slice(0, 78) + '…' : notes;
   return `
-    <div class="task-notes-preview" title="${escapeHTML(notes)}">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="11" height="11">
+    <div class="task-notes-preview">
+      <svg class="task-notes-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="11" height="11">
         <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
         <polyline points="14 2 14 8 20 8"/>
       </svg>
-      <span>${escapeHTML(preview)}</span>
+      <span class="task-notes-text">${escapeHTML(notes)}</span>
+      <svg class="task-notes-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="12" height="12">
+        <polyline points="6 9 12 15 18 9"/>
+      </svg>
     </div>
   `;
 }
