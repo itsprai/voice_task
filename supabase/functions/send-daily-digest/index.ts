@@ -13,9 +13,71 @@ const corsHeaders = {
 const VAPID_PUBLIC_KEY  = Deno.env.get("VAPID_PUBLIC_KEY") ?? "";
 const VAPID_PRIVATE_KEY = Deno.env.get("VAPID_PRIVATE_KEY") ?? "";
 const VAPID_SUBJECT     = Deno.env.get("VAPID_SUBJECT") ?? "mailto:admin@taskvoice.app";
+const GROQ_API_KEY      = Deno.env.get("GROQ_API_KEY") ?? "";
+const GROQ_MODEL        = Deno.env.get("GROQ_MODEL") ?? "llama-3.3-70b-versatile";
 
 if (VAPID_PUBLIC_KEY && VAPID_PRIVATE_KEY) {
   webpush.setVapidDetails(VAPID_SUBJECT, VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY);
+}
+
+// One-line natural-language digest from a task list. Returns null on any failure
+// so the caller can fall back to the plain-text format.
+async function summarizeTasks(descriptions: string[], totalCount: number): Promise<string | null> {
+  if (!GROQ_API_KEY || !descriptions.length) return null;
+
+  const systemPrompt =
+    `You write a SINGLE short sentence (max ~110 characters) summarizing a user's tasks for today, for a push notification.
+Be warm but factual — no greetings, no emojis, no "Hi", no "you have", no bullet lists.
+Capture the day's theme or highlight the most time-sensitive or important item.
+For long lists, group into themes and acknowledge the volume.
+Return ONLY the sentence, no quotes, no markdown.
+
+Examples:
+Tasks (3 total): ["Send Prescription of Rich Tyagi","Call Mohit","Order dad eyeglasses"]
+→ Two errands and a call with Mohit lined up for today.
+
+Tasks (1 total): ["Apply Australian Visa"]
+→ One focus today: your Australian visa application.
+
+Tasks (4 total): ["Send report","Standup","1:1 with John","Code review"]
+→ Standup, 1:1 with John, plus a report and a code review to wrap.
+
+Tasks (12 total, showing 10): ["Pay rent","Email lawyer","School fee","Buy groceries","Doctor follow-up","Call mom","Fix sink","Pickup laundry","Submit timesheet","Order books"]
+→ Heavy day — 12 tasks across errands, calls, and admin work to clear.`;
+
+  const userPrompt = totalCount > descriptions.length
+    ? `Tasks (${totalCount} total, showing ${descriptions.length}): ${JSON.stringify(descriptions)}`
+    : `Tasks (${totalCount} total): ${JSON.stringify(descriptions)}`;
+
+  try {
+    const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type":  "application/json",
+        Authorization:   `Bearer ${GROQ_API_KEY}`,
+      },
+      body: JSON.stringify({
+        model:       GROQ_MODEL,
+        messages:    [
+          { role: "system", content: systemPrompt },
+          { role: "user",   content: userPrompt   },
+        ],
+        temperature: 0.3,
+        max_tokens:  60,
+      }),
+      // Don't let a stuck Groq call block the cron tick
+      signal: AbortSignal.timeout(5000),
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    const text = data?.choices?.[0]?.message?.content?.trim();
+    if (!text) return null;
+    // Strip any wrapping quotes/markdown
+    return text.replace(/^["'`*_]+|["'`*_]+$/g, "").slice(0, 140);
+  } catch (err) {
+    console.warn("summarizeTasks failed:", (err as Error)?.message);
+    return null;
+  }
 }
 
 Deno.serve(async (req: Request) => {
@@ -90,7 +152,19 @@ Deno.serve(async (req: Request) => {
 
     if (localHM !== p.daily_reminder_time) continue;
 
-    // Fetch today's pending tasks assigned to this user
+    // First a cheap exact count so the title reflects the TRUE number of tasks
+    // (decoupled from the LLM-friendly limit below)
+    const { count: totalCount } = await admin
+      .from("tasks")
+      .select("*", { count: "exact", head: true })
+      .eq("assignee_id", userId)
+      .eq("dueDate", today)
+      .eq("status", "pending");
+
+    if (!totalCount) continue;
+
+    // Up to 10 descriptions feed the LLM — enough for theme detection without
+    // bloating the prompt or push body
     const { data: tasks } = await admin
       .from("tasks")
       .select("description")
@@ -98,14 +172,18 @@ Deno.serve(async (req: Request) => {
       .eq("dueDate", today)
       .eq("status", "pending")
       .order("time", { ascending: true })
-      .limit(5);
+      .limit(10);
 
     if (!tasks?.length) continue;
 
-    const titles = tasks.map((t: { description: string }) => t.description);
-    const body = titles.slice(0, 3).join(" · ") + (titles.length > 3 ? "…" : "");
+    const titles    = tasks.map((t: { description: string }) => t.description);
+    const aiBody    = await summarizeTasks(titles, totalCount);
+    const plainBody = totalCount > 3
+      ? `${titles.slice(0, 3).join(" · ")} +${totalCount - 3} more`
+      : titles.slice(0, totalCount).join(" · ");
+    const body      = aiBody ?? plainBody;
     const payload = JSON.stringify({
-      title: `${tasks.length} task${tasks.length === 1 ? "" : "s"} today`,
+      title: `${totalCount} task${totalCount === 1 ? "" : "s"} today`,
       body,
       url: "/",
       taskId: "daily-digest",
