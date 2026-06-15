@@ -57,16 +57,41 @@ const App = {
     document.addEventListener('auth:signed-in',  () => this._onSignedIn());
     document.addEventListener('auth:signed-out', () => this._onSignedOut());
 
-    // Sign out buttons (both roles) — switch screens immediately, don't wait
-    // for the auth event
-    ['assigner-signout-btn', 'assignee-signout-btn'].forEach(id => {
-      document.getElementById(id)?.addEventListener('click', async () => {
+    // Settings gear opens the settings sheet (replaces the bell + signout buttons)
+    ['assigner-settings-btn', 'assignee-settings-btn'].forEach(id => {
+      document.getElementById(id)?.addEventListener('click', () => this._openSettings());
+    });
+
+    // Single delegated handler for sheet interactions (open or closed safely)
+    document.body.addEventListener('click', async e => {
+      if (e.target.closest('[data-close-settings]')) {
+        this._closeSettings();
+        return;
+      }
+      if (e.target.closest('#settings-signout-btn')) {
+        this._closeSettings();
         if (!confirm('Sign out?')) return;
-        try { await Auth.signOut(); } catch (e) { console.warn('Sign out error:', e); }
+        try { await Auth.signOut(); } catch (err) { console.warn('Sign out error:', err); }
         this._booted = false;
         this._resetAuthScreen();
         this._showScreen('auth');
-      });
+      }
+    });
+
+    document.body.addEventListener('change', async e => {
+      const t = e.target;
+      if (!t || !t.id) return;
+
+      if (t.id === 'settings-notif-enabled') {
+        await this._handleNotifToggle(t);
+      } else if (t.id === 'settings-daily-enabled') {
+        await this._handleDailyToggle(t);
+      } else if (t.id === 'settings-daily-time') {
+        if (t.value) {
+          await Sync.savePreference('daily_reminder_time', t.value);
+          this.showToast(`Reminder time set to ${t.value}`);
+        }
+      }
     });
 
     // iOS suspends standalone PWAs in the background and kills the realtime
@@ -145,6 +170,159 @@ const App = {
     if (otpEmail) otpEmail.textContent = '';
   },
 
+  // ── Settings sheet ─────────────────────────────────────────────────────────
+  _settingsSlot() {
+    return document.querySelector('.screen--active [id$="-settings-sheet-slot"]');
+  },
+
+  async _openSettings() {
+    const slot = this._settingsSlot();
+    if (!slot) return;
+    slot.innerHTML = this._renderSettingsHTML();
+    await this._loadSettingsState();
+  },
+
+  _closeSettings() {
+    document.querySelectorAll('[id$="-settings-sheet-slot"]').forEach(s => s.innerHTML = '');
+  },
+
+  _renderSettingsHTML() {
+    const isStandalone = navigator.standalone === true || matchMedia('(display-mode: standalone)').matches;
+    const isIOS        = /iPad|iPhone|iPod/.test(navigator.userAgent);
+    const hasAPI       = 'Notification' in window;
+    const denied       = hasAPI && Notification.permission === 'denied';
+
+    let notifSub  = 'Required for any reminder push to work';
+    let notifLock = false;
+    if (isIOS && !isStandalone) {
+      notifSub = 'Add this app to your Home Screen to enable notifications';
+      notifLock = true;
+    } else if (!hasAPI) {
+      notifSub = 'Not supported in this browser';
+      notifLock = true;
+    } else if (denied) {
+      notifSub = 'Blocked in browser settings — enable there first';
+      notifLock = true;
+    }
+
+    return `
+      <div class="sheet-backdrop" data-close-settings></div>
+      <div class="sheet settings-sheet">
+        <div class="sheet-grabber"></div>
+        <p class="sheet-title">Settings</p>
+
+        <div class="settings-section">
+          <div class="settings-row">
+            <div class="settings-row-info">
+              <p class="settings-row-title">Notifications</p>
+              <p class="settings-row-sub">${notifSub}</p>
+            </div>
+            <label class="settings-toggle">
+              <input type="checkbox" id="settings-notif-enabled" ${notifLock ? 'disabled' : ''}/>
+              <span class="settings-toggle-track"></span>
+            </label>
+          </div>
+        </div>
+
+        <div class="settings-section">
+          <div class="settings-row">
+            <div class="settings-row-info">
+              <p class="settings-row-title">Daily reminder</p>
+              <p class="settings-row-sub">One push notification each day summarizing today's pending tasks</p>
+            </div>
+            <label class="settings-toggle">
+              <input type="checkbox" id="settings-daily-enabled"/>
+              <span class="settings-toggle-track"></span>
+            </label>
+          </div>
+          <div class="settings-row" id="settings-daily-time-row">
+            <span class="settings-row-label">Time</span>
+            <input type="time" id="settings-daily-time" class="add-task-date settings-time-input" value="08:00"/>
+          </div>
+        </div>
+
+        <button id="settings-signout-btn" class="settings-signout-btn">Sign out</button>
+      </div>
+    `;
+  },
+
+  async _loadSettingsState() {
+    // Notifications toggle reflects: permission granted AND a push subscription exists
+    const notifToggle = document.getElementById('settings-notif-enabled');
+    if (notifToggle && !notifToggle.disabled) {
+      const granted = ('Notification' in window) && Notification.permission === 'granted';
+      const subbed  = granted && await Notifications.isSubscribed();
+      notifToggle.checked = !!subbed;
+    }
+
+    // Daily reminder prefs
+    const dailyEnabled = await Sync.loadPreference('daily_reminder_enabled');
+    const dailyTime    = await Sync.loadPreference('daily_reminder_time');
+    const enabledEl    = document.getElementById('settings-daily-enabled');
+    const timeEl       = document.getElementById('settings-daily-time');
+    const timeRow      = document.getElementById('settings-daily-time-row');
+    if (enabledEl) enabledEl.checked = dailyEnabled === '1';
+    if (timeEl)    timeEl.value      = dailyTime || '08:00';
+    if (timeRow)   timeRow.classList.toggle('hidden', dailyEnabled !== '1');
+  },
+
+  async _handleNotifToggle(input) {
+    if (input.checked) {
+      if (!('Notification' in window)) { input.checked = false; return; }
+      if (Notification.permission === 'denied') {
+        input.checked = false;
+        this.showToast('Notifications blocked in browser settings', true);
+        return;
+      }
+      let perm = Notification.permission;
+      if (perm !== 'granted') perm = await Notification.requestPermission();
+      if (perm !== 'granted') {
+        input.checked = false;
+        this.showToast(perm === 'denied' ? 'Notifications blocked in browser settings' : 'Permission needed', true);
+        return;
+      }
+      await Notifications._subscribePush();
+      this.showToast('Notifications enabled');
+    } else {
+      await Notifications.unsubscribe();
+      // Disabling notifications also turns off the daily reminder (nothing to deliver)
+      const dailyEl = document.getElementById('settings-daily-enabled');
+      if (dailyEl?.checked) {
+        dailyEl.checked = false;
+        await Sync.savePreference('daily_reminder_enabled', '0');
+        document.getElementById('settings-daily-time-row')?.classList.add('hidden');
+      }
+      this.showToast('Notifications disabled');
+    }
+  },
+
+  async _handleDailyToggle(input) {
+    const timeRow = document.getElementById('settings-daily-time-row');
+    if (input.checked) {
+      // Daily reminder needs an active push subscription
+      const granted = ('Notification' in window) && Notification.permission === 'granted';
+      const subbed  = granted && await Notifications.isSubscribed();
+      if (!subbed) {
+        input.checked = false;
+        this.showToast('Enable notifications first', true);
+        return;
+      }
+      const time = document.getElementById('settings-daily-time')?.value || '08:00';
+      const tz   = (Intl.DateTimeFormat().resolvedOptions().timeZone) || 'UTC';
+      await Promise.all([
+        Sync.savePreference('daily_reminder_enabled', '1'),
+        Sync.savePreference('daily_reminder_time',    time),
+        Sync.savePreference('daily_reminder_tz',      tz)
+      ]);
+      timeRow?.classList.remove('hidden');
+      this.showToast(`Daily reminder set for ${time}`);
+    } else {
+      await Sync.savePreference('daily_reminder_enabled', '0');
+      timeRow?.classList.add('hidden');
+      this.showToast('Daily reminder off');
+    }
+  },
+
   // ── Auth screen ────────────────────────────────────────────────────────────
   _showScreen(name) {
     document.querySelectorAll('.screen').forEach(s => s.classList.remove('screen--active'));
@@ -210,7 +388,6 @@ const App = {
       this._bindSyncEvents();
       this.voice = new VoiceRecorder();
       this._bindVoiceEvents();
-      this._initNotifBanner();
       Sync.subscribe(() => this._pullAll());
     }
 
@@ -1337,43 +1514,6 @@ const App = {
     }
   },
 
-  // ── Notification bell (home header) ────────────────────────────────────────
-  async _initNotifBanner() {
-    const btn = document.getElementById('notif-bell-btn');
-    if (!btn) return;
-
-    const isStandalone = navigator.standalone === true || matchMedia('(display-mode: standalone)').matches;
-    const isIOS  = /iPad|iPhone|iPod/.test(navigator.userAgent);
-    const hasAPI = 'Notification' in window;
-
-    const setOn  = () => { btn.classList.add('notif-bell--on');    btn.title = 'Notifications on — tap to disable'; };
-    const setOff = () => { btn.classList.remove('notif-bell--on'); btn.title = 'Enable notifications'; };
-
-    if ((isIOS && !isStandalone) || !hasAPI) {
-      btn.addEventListener('click', () => {
-        this.showToast(isIOS ? 'Add to Home Screen to enable notifications' : 'Notifications not supported in this browser', true);
-      });
-      return;
-    }
-    const subscribed = Notification.permission === 'granted' && await Notifications.isSubscribed();
-    if (subscribed) setOn();
-
-    btn.addEventListener('click', () => {
-      if (Notification.permission === 'denied') { this.showToast('Enable notifications in your browser settings'); return; }
-      if (btn.classList.contains('notif-bell--on')) {
-        Notifications.unsubscribe().then(() => { setOff(); this.showToast('Notifications disabled'); });
-        return;
-      }
-      if (Notification.permission === 'granted') {
-        Notifications._subscribePush().then(() => { setOn(); this.showToast('Notifications enabled'); });
-        return;
-      }
-      Notification.requestPermission().then(async result => {
-        if (result === 'granted') { await Notifications._subscribePush(); setOn(); this.showToast('Notifications enabled'); }
-        else if (result === 'denied') { this.showToast('Notifications blocked in browser settings', true); }
-      });
-    });
-  }
 };
 
 // ── Auth screen event bindings ─────────────────────────────────────────────────
