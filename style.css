@@ -532,7 +532,41 @@ body::before {
 }
 .task-recur-chip svg { flex-shrink: 0; }
 
-.chip--recur { background: var(--primary-soft); color: var(--primary); }
+.chip--recur  { background: var(--primary-soft); color: var(--primary); }
+.chip--urgent { background: var(--danger-soft); color: var(--danger); }
+
+/* Urgent inline badge — small red ! before the task description */
+.task-urgent-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px; height: 18px;
+  border-radius: 50%;
+  background: var(--danger);
+  color: white;
+  font-size: 11px;
+  font-weight: 800;
+  flex-shrink: 0;
+  margin-right: 6px;
+  vertical-align: -3px;
+  font-family: inherit;
+}
+
+/* Urgent toggle row inside add-task / edit forms */
+.add-task-urgent-row,
+.pipeline-edit-urgent-row {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 14px; color: var(--text);
+  padding: 8px 2px;
+  cursor: pointer;
+  user-select: none;
+}
+.add-task-urgent-row input,
+.pipeline-edit-urgent-row input {
+  width: 18px; height: 18px;
+  accent-color: var(--danger);
+  cursor: pointer;
+}
 
 .delete-btn { background: none; border: none; color: #cbd5e1; cursor: pointer; font-size: 16px; padding: 4px 2px; flex-shrink: 0; transition: color 0.15s; }
 .delete-btn:active { color: var(--danger); }

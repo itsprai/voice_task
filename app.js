@@ -600,6 +600,10 @@ const App = {
         <input type="time" id="add-task-time" class="add-task-date"/>
         <label class="add-task-field-label" for="add-task-recurrence">Repeat</label>
         <select id="add-task-recurrence" class="add-task-input add-task-select">${recurOpts}</select>
+        <label class="add-task-urgent-row">
+          <input type="checkbox" id="add-task-urgent"/>
+          <span>Mark as urgent</span>
+        </label>
         <button id="add-task-submit" class="add-task-btn" data-target-id="${member.id}">Add Task</button>
       </div>
     `;
@@ -627,9 +631,10 @@ const App = {
       : this.state.team.find(m => m.id === targetId);
     if (!member) return;
 
-    const _date = dateInput.value || new Date().toISOString().split('T')[0];
-    const _time = timeInput?.value || new Date().toTimeString().slice(0, 5);
+    const _date  = dateInput.value || new Date().toISOString().split('T')[0];
+    const _time  = timeInput?.value || new Date().toTimeString().slice(0, 5);
     const _recur = document.getElementById('add-task-recurrence')?.value || 'none';
+    const _urgent = document.getElementById('add-task-urgent')?.checked || false;
 
     const newTask = {
       id:          crypto.randomUUID(),
@@ -644,6 +649,7 @@ const App = {
       dueAt:       new Date(`${_date}T${_time}`).getTime(),
       status:      'pending',
       recurrence:  _recur,
+      priority:    _urgent ? 'urgent' : 'normal',
       createdAt:   new Date().toISOString(),
       updatedAt:   new Date().toISOString()
     };
@@ -653,7 +659,10 @@ const App = {
     this._closeManagerTypeSheet();
     this._renderPipeline();
     this._updatePipelineBadge();
-    this.showToast(_recur !== 'none' ? `Recurring task added (${recurrenceLabel(_recur).toLowerCase()})` : 'Task added!');
+    const toastMsg = _urgent
+      ? 'Urgent task added!'
+      : (_recur !== 'none' ? `Recurring task added (${recurrenceLabel(_recur).toLowerCase()})` : 'Task added!');
+    this.showToast(toastMsg);
   },
 
   // When a recurring task gets marked complete, create the next instance.
@@ -739,13 +748,15 @@ const App = {
       <p class="preview-label">✓ ${tasks.length > 1 ? tasks.length + ' tasks saved' : 'Task saved'}</p>
       ${tasks.map(t => {
         const recurLbl = recurrenceLabel(t.recurrence);
+        const isUrgent = t.priority === 'urgent';
         return `
         <div class="preview-item">
-          <p class="preview-desc">${escapeHTML(t.description)}</p>
+          <p class="preview-desc">${isUrgent ? '<span class="task-urgent-mark">!</span>' : ''}${escapeHTML(t.description)}</p>
           <div class="preview-meta">
             <span class="chip chip--assignee">${escapeHTML(t.assignee)}</span>
             ${t.dueDate ? `<span class="chip chip--date">${formatDate(t.dueDate)}${t.time ? ' · ' + formatTime(t.time) : ''}</span>` : ''}
             ${recurLbl ? `<span class="chip chip--recur">↻ ${escapeHTML(recurLbl)}</span>` : ''}
+            ${isUrgent ? '<span class="chip chip--urgent">Urgent</span>' : ''}
           </div>
         </div>
       `; }).join('')}
@@ -1165,8 +1176,10 @@ const App = {
         const date  = form.querySelector('.pipeline-edit-date').value;
         const time  = form.querySelector('.pipeline-edit-time').value;
         if (!desc) return;
-        const dueAt = date && time ? new Date(`${date}T${time}`).getTime() : null;
-        this.state.tasks = Storage.update(id, { description: desc, dueDate: date || null, time: time || null, dueAt });
+        const dueAt    = date && time ? new Date(`${date}T${time}`).getTime() : null;
+        const urgentEl = form.querySelector('.pipeline-edit-urgent');
+        const priority = urgentEl?.checked ? 'urgent' : 'normal';
+        this.state.tasks = Storage.update(id, { description: desc, dueDate: date || null, time: time || null, dueAt, priority });
         Sync.push(this.state.tasks);
         Notifications.cancelLocal(id);
         const updated = this.state.tasks.find(t => t.id === id);
@@ -1320,8 +1333,10 @@ const App = {
         const date = form.querySelector('.pipeline-edit-date').value;
         const time = form.querySelector('.pipeline-edit-time').value;
         if (!desc) return;
-        const dueAt = date && time ? new Date(`${date}T${time}`).getTime() : null;
-        this.state.tasks = Storage.update(id, { description: desc, dueDate: date || null, time: time || null, dueAt });
+        const dueAt    = date && time ? new Date(`${date}T${time}`).getTime() : null;
+        const urgentEl = form.querySelector('.pipeline-edit-urgent');
+        const priority = urgentEl?.checked ? 'urgent' : 'normal';
+        this.state.tasks = Storage.update(id, { description: desc, dueDate: date || null, time: time || null, dueAt, priority });
         Sync.push(this.state.tasks);
         this.state.editingAssigneeTaskId = null;
         renderAssigneeTasksPage(this.state.tasks, this.state.assigners, null);
@@ -1374,9 +1389,10 @@ const App = {
       const desc       = descInput?.value.trim();
       if (!desc || !assignerId) { descInput?.focus(); return; }
 
-      const _date  = dateInput.value || new Date().toISOString().split('T')[0];
-      const _time  = timeInput?.value || new Date().toTimeString().slice(0, 5);
-      const _recur = document.getElementById('add-assignee-task-recurrence')?.value || 'none';
+      const _date   = dateInput.value || new Date().toISOString().split('T')[0];
+      const _time   = timeInput?.value || new Date().toTimeString().slice(0, 5);
+      const _recur  = document.getElementById('add-assignee-task-recurrence')?.value || 'none';
+      const _urgent = document.getElementById('add-assignee-task-urgent')?.checked || false;
 
       const newTask = {
         id:          crypto.randomUUID(),
@@ -1391,6 +1407,7 @@ const App = {
         dueAt:       new Date(`${_date}T${_time}`).getTime(),
         status:      'pending',
         recurrence:  _recur,
+        priority:    _urgent ? 'urgent' : 'normal',
         createdAt:   new Date().toISOString(),
         updatedAt:   new Date().toISOString()
       };
@@ -1401,7 +1418,10 @@ const App = {
       if (formSlot) formSlot.innerHTML = '';
       renderAssigneeTasksPage(this.state.tasks, this.state.assigners, null);
       this._updateAssigneeBadge();
-      this.showToast(_recur !== 'none' ? `Recurring task added (${recurrenceLabel(_recur).toLowerCase()})` : 'Task added!');
+      const toastMsg = _urgent
+        ? 'Urgent task added!'
+        : (_recur !== 'none' ? `Recurring task added (${recurrenceLabel(_recur).toLowerCase()})` : 'Task added!');
+      this.showToast(toastMsg);
     });
   },
 

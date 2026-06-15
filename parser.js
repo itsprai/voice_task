@@ -27,6 +27,11 @@ The manager's team: ${teamNames}. Team-member names must match this list exactly
 
 Extract EVERY task mentioned. Each task has its OWN assignee, date, time, and recurrence.
 
+PRIORITY — set "priority" to "urgent" when speech contains words like:
+- "urgent", "urgently", "ASAP", "important", "high priority", "top priority",
+  "critical", "right away", "immediately", "first thing", "drop everything"
+Otherwise default to "normal". Do NOT mark urgent just because there's a near-term deadline like "in 5 min" — only when an urgency adjective is explicit.
+
 RECURRENCE — set "recurrence" based on speech cues:
 - "every day", "daily", "each morning/night/evening" → "daily"
 - "every weekday", "Mon-Fri", "on weekdays" → "weekdays"
@@ -75,9 +80,10 @@ For each task return:
   * "3pm" = "15:00", "9am" = "09:00", "noon" = "12:00"
   * "morning" = "09:00", "afternoon" = "14:00", "evening" = "18:00"
 - "recurrence": one of "none", "hourly", "daily", "weekdays", "weekends", "weekly", "fortnightly", "monthly", "quarterly", "biannually", "yearly". See RECURRENCE rules above. Default "none".
+- "priority": "urgent" or "normal". See PRIORITY rules above. Default "normal".
 
 Return a JSON object:
-{"tasks": [{"description": "string", "assignee": "string", "dueDate": "YYYY-MM-DD", "time": "HH:MM", "recurrence": "string"}]}
+{"tasks": [{"description": "string", "assignee": "string", "dueDate": "YYYY-MM-DD", "time": "HH:MM", "recurrence": "string", "priority": "string"}]}
 
 If no task found:
 {"tasks": [], "error": "Could not understand the task. Please speak again."}`;
@@ -134,6 +140,7 @@ If no task found:
       const assigneeRaw = t.assignee.trim();
       const isSelf = selfRefs.includes(assigneeRaw.toLowerCase());
       const recurrence = validRecur.includes(t.recurrence) ? t.recurrence : 'none';
+      const priority   = t.priority === 'urgent' ? 'urgent' : 'normal';
 
       if (isSelf) {
         // Personal task — assigner & assignee both the current user
@@ -149,6 +156,7 @@ If no task found:
           time:        t.time    || currentTime,
           status:      'pending',
           recurrence,
+          priority,
           createdAt,
           updatedAt:   createdAt
         });
@@ -173,6 +181,7 @@ If no task found:
         time:        t.time    || currentTime,
         status:      'pending',
         recurrence,
+        priority,
         createdAt,
         updatedAt:   createdAt
       });
@@ -207,9 +216,10 @@ Extract every task mentioned. For each:
   - "yearly"/"annually"→yearly, "hourly"/"every hour"→hourly.
   - "by Friday"/"this Tuesday"/"tomorrow" are one-off deadlines → recurrence="none".
   - Default "none" when no clear recurring cue.
+- "priority": "urgent" if speech contains "urgent","ASAP","important","high/top priority","critical","right away","immediately"; else "normal".
 
 JSON only:
-{"tasks":[{"description":"...","dueDate":"YYYY-MM-DD","time":"HH:MM","recurrence":"..."}]}
+{"tasks":[{"description":"...","dueDate":"YYYY-MM-DD","time":"HH:MM","recurrence":"...","priority":"..."}]}
 
 If nothing usable: {"tasks":[],"error":"Could not understand. Please speak again."}`;
 
@@ -261,6 +271,7 @@ If nothing usable: {"tasks":[],"error":"Could not understand. Please speak again
       time:        t.time     || currentTime,
       status:      'pending',
       recurrence:  validRecur.includes(t.recurrence) ? t.recurrence : 'none',
+      priority:    t.priority === 'urgent' ? 'urgent' : 'normal',
       createdAt,
       updatedAt:   createdAt
     }));

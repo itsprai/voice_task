@@ -109,6 +109,7 @@ const Sync = {
       dueAt:       task.dueAt ? new Date(task.dueAt).getTime() : null,
       raw:         task.raw         ?? '',
       recurrence:  task.recurrence  ?? 'none',
+      priority:    task.priority    ?? 'normal',
       createdAt:   task.createdAt   ?? new Date().toISOString(),
       updatedAt:   new Date().toISOString()
     };

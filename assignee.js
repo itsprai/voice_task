@@ -88,6 +88,10 @@ function assigneeCardHTML(task, computedStatus, editingTaskId) {
         <input type="date" class="pipeline-edit-date" value="${task.dueDate || ''}"/>
         <input type="time" class="pipeline-edit-time" value="${task.time || ''}"/>
       </div>
+      <label class="pipeline-edit-urgent-row">
+        <input type="checkbox" class="pipeline-edit-urgent" ${task.priority === 'urgent' ? 'checked' : ''}/>
+        Mark as urgent
+      </label>
       <div class="pipeline-edit-actions">
         <button class="pipeline-edit-save btn-primary" data-id="${task.id}">Save</button>
         <button class="pipeline-edit-cancel btn-secondary">Cancel</button>
@@ -97,6 +101,7 @@ function assigneeCardHTML(task, computedStatus, editingTaskId) {
 
   const createdLabel = formatCreatedAt(task.createdAt);
   const recurLabel   = recurrenceLabel(task.recurrence);
+  const urgentMark   = task.priority === 'urgent' ? '<span class="task-urgent-mark" title="Urgent">!</span>' : '';
 
   return `
     <div class="assignee-task-card ${isCompleted ? 'assignee-task-card--done' : ''} ${isOverdue ? 'assignee-task-card--overdue' : ''}">
@@ -104,7 +109,7 @@ function assigneeCardHTML(task, computedStatus, editingTaskId) {
         ${isCompleted ? `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>` : ''}
       </button>
       <div class="assignee-task-body">
-        <div class="assignee-task-desc ${isCompleted ? 'assignee-task-desc--done' : ''}">${escapeHTML(task.description)}</div>
+        <div class="assignee-task-desc ${isCompleted ? 'assignee-task-desc--done' : ''}">${urgentMark}${escapeHTML(task.description)}</div>
         ${dateTime ? `<div class="assignee-task-date ${isOverdue ? 'task-date--overdue' : isToday ? 'task-date--today' : ''}">${dateTime}</div>` : ''}
         ${recurLabel ? `<div class="task-recur-chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="10" height="10"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>${escapeHTML(recurLabel)}</div>` : ''}
         ${createdLabel ? `<div class="task-added-at">Added ${escapeHTML(createdLabel)}</div>` : ''}
@@ -160,6 +165,10 @@ function renderAssigneeAddTaskForm(assigners, activeAssignerId) {
       <input type="time" id="add-assignee-task-time" class="add-task-date"/>
       <label class="add-task-field-label" for="add-assignee-task-recurrence">Repeat</label>
       <select id="add-assignee-task-recurrence" class="add-task-input add-task-select">${recurOpts}</select>
+      <label class="add-task-urgent-row">
+        <input type="checkbox" id="add-assignee-task-urgent"/>
+        <span>Mark as urgent</span>
+      </label>
       <button id="add-assignee-task-submit" class="add-task-btn" data-assigner-id="${active.id}">Add Task</button>
     </div>
   `;

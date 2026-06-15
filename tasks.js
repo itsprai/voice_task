@@ -58,6 +58,11 @@ function formatCreatedAt(isoStr) {
 
 function sortByDateTime(tasks, direction = 'asc') {
   return [...tasks].sort((a, b) => {
+    // Urgent always floats above non-urgent within the same section
+    const aU = a.priority === 'urgent' ? 1 : 0;
+    const bU = b.priority === 'urgent' ? 1 : 0;
+    if (aU !== bU) return bU - aU;
+
     if (!a.dueDate && !b.dueDate) return 0;
     if (!a.dueDate) return 1;
     if (!b.dueDate) return -1;
@@ -272,6 +277,7 @@ function taskCardHTML(task, nameMap = {}, opts = {}) {
 
   const createdLabel = formatCreatedAt(task.createdAt);
   const recurLabel   = recurrenceLabel(task.recurrence);
+  const urgentMark   = task.priority === 'urgent' ? '<span class="task-urgent-mark" title="Urgent">!</span>' : '';
 
   return `
     <div class="task-card ${cardClass}">
@@ -279,7 +285,7 @@ function taskCardHTML(task, nameMap = {}, opts = {}) {
         ${isCompleted ? `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>` : ''}
       </button>
       <div class="task-body">
-        <div class="task-desc ${isCompleted ? 'task-desc--done' : ''}">${escapeHTML(task.description)}</div>
+        <div class="task-desc ${isCompleted ? 'task-desc--done' : ''}">${urgentMark}${escapeHTML(task.description)}</div>
         ${metaParts.length ? `<div class="task-date ${dateClass}">${metaParts.map(escapeHTML).join(' · ')}</div>` : ''}
         ${recurLabel ? `<div class="task-recur-chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="10" height="10"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>${escapeHTML(recurLabel)}</div>` : ''}
         ${createdLabel ? `<div class="task-added-at">Added ${escapeHTML(createdLabel)}</div>` : ''}
