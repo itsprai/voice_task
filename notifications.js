@@ -96,6 +96,31 @@ const Notifications = {
 
   scheduleAll(tasks = []) { tasks.forEach(t => this.scheduleLocal(t)); },
 
+  // Fire-and-forget — tells the Edge Function to web-push the teammate that a
+  // task has just been assigned to them. Returns silently on any failure so
+  // the calling UI isn't blocked or alerted.
+  async sendAssignmentPush(task) {
+    try {
+      if (!SupabaseClient || !Auth.profile || !task) return;
+      if (!task.assignee_id || !task.assigner_id) return;
+      if (task.assigner_id !== Auth.profile.id) return;
+      if (task.assignee_id === task.assigner_id) return;
+
+      await SupabaseClient.functions.invoke('send-assignment-notification', {
+        body: {
+          taskId:      task.id,
+          assigneeId:  task.assignee_id,
+          description: task.description,
+          dueDate:     task.dueDate || null,
+          time:        task.time    || null,
+          priority:    task.priority || 'normal'
+        }
+      });
+    } catch (err) {
+      console.warn('[Notifications] assignment push failed:', err);
+    }
+  },
+
   async unsubscribe() {
     try {
       const sub = await this._swReg?.pushManager?.getSubscription();

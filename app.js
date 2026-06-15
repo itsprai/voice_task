@@ -706,6 +706,7 @@ const App = {
 
     this.state.tasks = Storage.add(newTask);
     Notifications.scheduleLocal(newTask);
+    Notifications.sendAssignmentPush(newTask);
     this._closeManagerTypeSheet();
     this._renderPipeline();
     this._updatePipelineBadge();
@@ -956,6 +957,7 @@ const App = {
         tasks.forEach(task => {
           this.state.tasks = Storage.add(task);
           Notifications.scheduleLocal(task);
+          Notifications.sendAssignmentPush(task);
         });
 
         this._showVoiceOverlayResult(tasks);
@@ -1392,6 +1394,7 @@ const App = {
 
         this.state.tasks = Storage.add(newTask);
         Notifications.scheduleLocal(newTask);
+        Notifications.sendAssignmentPush(newTask);
         this._renderPipeline();
         this._updatePipelineBadge();
         this.showToast('Task added!');
