@@ -110,6 +110,8 @@ const Sync = {
       raw:         task.raw         ?? '',
       recurrence:  task.recurrence  ?? 'none',
       priority:    task.priority    ?? 'normal',
+      notes:       task.notes       ?? '',
+      subtasks:    Array.isArray(task.subtasks) ? task.subtasks : [],
       createdAt:   task.createdAt   ?? new Date().toISOString(),
       updatedAt:   new Date().toISOString()
     };

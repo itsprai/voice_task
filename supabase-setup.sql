@@ -75,8 +75,10 @@ ALTER TABLE public.tasks
   ADD COLUMN IF NOT EXISTS assigner_id UUID REFERENCES public.profiles(id),
   ADD COLUMN IF NOT EXISTS assignee_id UUID REFERENCES public.profiles(id),
   ADD COLUMN IF NOT EXISTS added_by    UUID REFERENCES public.profiles(id),
-  ADD COLUMN IF NOT EXISTS recurrence  TEXT NOT NULL DEFAULT 'none',
-  ADD COLUMN IF NOT EXISTS priority    TEXT NOT NULL DEFAULT 'normal';
+  ADD COLUMN IF NOT EXISTS recurrence  TEXT  NOT NULL DEFAULT 'none',
+  ADD COLUMN IF NOT EXISTS priority    TEXT  NOT NULL DEFAULT 'normal',
+  ADD COLUMN IF NOT EXISTS notes       TEXT  NOT NULL DEFAULT '',
+  ADD COLUMN IF NOT EXISTS subtasks    JSONB NOT NULL DEFAULT '[]'::jsonb;
 
 -- CHECK constraints (re-runnable: dropped + readded)
 ALTER TABLE public.tasks DROP CONSTRAINT IF EXISTS tasks_recurrence_check;

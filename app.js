@@ -75,6 +75,34 @@ const App = {
         this._booted = false;
         this._resetAuthScreen();
         this._showScreen('auth');
+        return;
+      }
+
+      // ─ Subtask interactions ────────────────────────────────────────
+      // Toggle a subtask checkbox on a rendered task card
+      const subCheck = e.target.closest('.subtask-check');
+      if (subCheck) {
+        this._toggleSubtaskOnCard(subCheck.dataset.taskId, subCheck.dataset.subtaskId);
+        return;
+      }
+      // Remove a subtask row inside an editor (Type sheet or inline edit form)
+      const removeBtn = e.target.closest('.subtask-edit-remove');
+      if (removeBtn) {
+        removeBtn.closest('.subtask-edit-row')?.remove();
+        return;
+      }
+      // Click '+ Add' button next to subtask-add-input
+      const addBtn = e.target.closest('.subtask-add-btn');
+      if (addBtn) {
+        this._appendSubtaskRowFromInput(addBtn);
+        return;
+      }
+      // "Break into steps with AI"
+      const breakBtn = e.target.closest('.break-into-steps-btn');
+      if (breakBtn) {
+        e.preventDefault();
+        await this._breakIntoSteps(breakBtn);
+        return;
       }
     });
 
@@ -92,6 +120,16 @@ const App = {
           this.showToast(`Reminder time set to ${t.value}`);
         }
       }
+    });
+
+    // Enter inside a "Add a subtask…" input — add the row
+    document.body.addEventListener('keydown', e => {
+      if (e.key !== 'Enter') return;
+      const input = e.target.closest && e.target.closest('.subtask-add-input');
+      if (!input) return;
+      e.preventDefault();
+      const addBtn = input.parentElement?.querySelector('.subtask-add-btn');
+      if (addBtn) this._appendSubtaskRowFromInput(addBtn);
     });
 
     // iOS suspends standalone PWAs in the background and kills the realtime
@@ -604,6 +642,7 @@ const App = {
           <input type="checkbox" id="add-task-urgent"/>
           <span>Mark as urgent</span>
         </label>
+        ${notesAndSubtasksFormHTML(null, 'add-task')}
         <button id="add-task-submit" class="add-task-btn" data-target-id="${member.id}">Add Task</button>
       </div>
     `;
@@ -635,6 +674,8 @@ const App = {
     const _time  = timeInput?.value || new Date().toTimeString().slice(0, 5);
     const _recur = document.getElementById('add-task-recurrence')?.value || 'none';
     const _urgent = document.getElementById('add-task-urgent')?.checked || false;
+    const _notes  = document.getElementById('add-task-notes')?.value.trim() || '';
+    const _subs   = readSubtasksFromForm(document.getElementById('add-task-subtasks'));
 
     const newTask = {
       id:          crypto.randomUUID(),
@@ -650,6 +691,8 @@ const App = {
       status:      'pending',
       recurrence:  _recur,
       priority:    _urgent ? 'urgent' : 'normal',
+      notes:       _notes,
+      subtasks:    _subs,
       createdAt:   new Date().toISOString(),
       updatedAt:   new Date().toISOString()
     };
@@ -663,6 +706,70 @@ const App = {
       ? 'Urgent task added!'
       : (_recur !== 'none' ? `Recurring task added (${recurrenceLabel(_recur).toLowerCase()})` : 'Task added!');
     this.showToast(toastMsg);
+  },
+
+  // ── Subtask interactions (shared between manager + assignee) ──────────────
+
+  // Tick/untick a subtask on a rendered task card. Updates the task's
+  // subtasks JSON and re-renders the current page.
+  _toggleSubtaskOnCard(taskId, subtaskId) {
+    if (!taskId || !subtaskId) return;
+    const task = this.state.tasks.find(t => t.id === taskId);
+    if (!task) return;
+    const subs = (task.subtasks || []).map(s =>
+      s.id === subtaskId ? { ...s, done: !s.done } : s
+    );
+    this.state.tasks = Storage.update(taskId, { subtasks: subs });
+    this._refreshCurrentPage();
+  },
+
+  // Used by both the + Add button and Enter-in-input: read the input value,
+  // append a row to the matching subtask list, clear the input.
+  _appendSubtaskRowFromInput(btnOrAddBtn) {
+    const targetId = btnOrAddBtn.dataset.target;
+    const list     = document.getElementById(targetId);
+    const input    = btnOrAddBtn.closest('.subtask-add-row')?.querySelector('.subtask-add-input');
+    const text     = input?.value.trim();
+    if (!list || !text) { input?.focus(); return; }
+    list.appendChild(makeSubtaskRow(text, false));
+    if (input) { input.value = ''; input.focus(); }
+  },
+
+  // Ask Groq to break the current task description into 3-6 subtasks,
+  // append them all to the matching subtask list.
+  async _breakIntoSteps(btn) {
+    const targetId = btn.dataset.target;
+    const list     = document.getElementById(targetId);
+    if (!list) return;
+
+    // Find the description input that this Break-into-steps button belongs to.
+    // Try the closest sheet first (creation flow), then closest edit form (edit flow).
+    const container = btn.closest('.sheet') || btn.closest('.pipeline-edit-form');
+    const desc = container?.querySelector('.add-task-input[id$="-desc"], .pipeline-edit-desc, #add-task-desc, #add-assignee-task-desc')?.value.trim();
+
+    if (!desc) {
+      this.showToast('Add a task description first', true);
+      return;
+    }
+
+    const originalText = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = 'Thinking…';
+
+    try {
+      const steps = await Parser.breakIntoSteps(desc);
+      if (!steps?.length) {
+        this.showToast('Could not break it down — try again', true);
+        return;
+      }
+      steps.forEach(text => list.appendChild(makeSubtaskRow(text, false)));
+      this.showToast(`Added ${steps.length} step${steps.length === 1 ? '' : 's'}`);
+    } catch (err) {
+      this.showToast(err.message || 'AI breakdown failed', true);
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = originalText;
+    }
   },
 
   // When a recurring task gets marked complete, create the next instance.
@@ -1179,7 +1286,9 @@ const App = {
         const dueAt    = date && time ? new Date(`${date}T${time}`).getTime() : null;
         const urgentEl = form.querySelector('.pipeline-edit-urgent');
         const priority = urgentEl?.checked ? 'urgent' : 'normal';
-        this.state.tasks = Storage.update(id, { description: desc, dueDate: date || null, time: time || null, dueAt, priority });
+        const notes    = form.querySelector(`#edit-${id}-notes`)?.value.trim() || '';
+        const subtasks = readSubtasksFromForm(form.querySelector(`#edit-${id}-subtasks`));
+        this.state.tasks = Storage.update(id, { description: desc, dueDate: date || null, time: time || null, dueAt, priority, notes, subtasks });
         Sync.push(this.state.tasks);
         Notifications.cancelLocal(id);
         const updated = this.state.tasks.find(t => t.id === id);
@@ -1336,7 +1445,9 @@ const App = {
         const dueAt    = date && time ? new Date(`${date}T${time}`).getTime() : null;
         const urgentEl = form.querySelector('.pipeline-edit-urgent');
         const priority = urgentEl?.checked ? 'urgent' : 'normal';
-        this.state.tasks = Storage.update(id, { description: desc, dueDate: date || null, time: time || null, dueAt, priority });
+        const notes    = form.querySelector(`#edit-${id}-notes`)?.value.trim() || '';
+        const subtasks = readSubtasksFromForm(form.querySelector(`#edit-${id}-subtasks`));
+        this.state.tasks = Storage.update(id, { description: desc, dueDate: date || null, time: time || null, dueAt, priority, notes, subtasks });
         Sync.push(this.state.tasks);
         this.state.editingAssigneeTaskId = null;
         renderAssigneeTasksPage(this.state.tasks, this.state.assigners, null);
@@ -1393,6 +1504,8 @@ const App = {
       const _time   = timeInput?.value || new Date().toTimeString().slice(0, 5);
       const _recur  = document.getElementById('add-assignee-task-recurrence')?.value || 'none';
       const _urgent = document.getElementById('add-assignee-task-urgent')?.checked || false;
+      const _notes  = document.getElementById('add-assignee-task-notes')?.value.trim() || '';
+      const _subs   = readSubtasksFromForm(document.getElementById('add-assignee-task-subtasks'));
 
       const newTask = {
         id:          crypto.randomUUID(),
@@ -1408,6 +1521,8 @@ const App = {
         status:      'pending',
         recurrence:  _recur,
         priority:    _urgent ? 'urgent' : 'normal',
+        notes:       _notes,
+        subtasks:    _subs,
         createdAt:   new Date().toISOString(),
         updatedAt:   new Date().toISOString()
       };

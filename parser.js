@@ -27,6 +27,16 @@ The manager's team: ${teamNames}. Team-member names must match this list exactly
 
 Extract EVERY task mentioned. Each task has its OWN assignee, date, time, and recurrence.
 
+NOTES — extra context that doesn't belong in the short task title goes in "notes":
+- Amounts ("12,500 INR", "$185"), addresses, IDs, agenda items, names, deadlines beyond the due date,
+  links, phone numbers, instructions ("include itemized invoice", "ask Aditya for login").
+- Keep description SHORT and imperative. Push details to notes.
+- If no extra context, notes = "".
+
+SUBTASKS — only if user explicitly enumerates steps. Triggers: "with subtasks", "with steps", "and then", "first X then Y then Z", or a clear list of items inside one task.
+- If detected, output as an array of short imperative phrases.
+- If not detected, subtasks = [].
+
 PRIORITY — set "priority" to "urgent" when speech contains words like:
 - "urgent", "urgently", "ASAP", "important", "high priority", "top priority",
   "critical", "right away", "immediately", "first thing", "drop everything"
@@ -81,9 +91,11 @@ For each task return:
   * "morning" = "09:00", "afternoon" = "14:00", "evening" = "18:00"
 - "recurrence": one of "none", "hourly", "daily", "weekdays", "weekends", "weekly", "fortnightly", "monthly", "quarterly", "biannually", "yearly". See RECURRENCE rules above. Default "none".
 - "priority": "urgent" or "normal". See PRIORITY rules above. Default "normal".
+- "notes": extra context (see NOTES rules above). Default "".
+- "subtasks": array of short strings (see SUBTASKS rules above). Default [].
 
 Return a JSON object:
-{"tasks": [{"description": "string", "assignee": "string", "dueDate": "YYYY-MM-DD", "time": "HH:MM", "recurrence": "string", "priority": "string"}]}
+{"tasks": [{"description": "string", "assignee": "string", "dueDate": "YYYY-MM-DD", "time": "HH:MM", "recurrence": "string", "priority": "string", "notes": "string", "subtasks": ["string", ...]}]}
 
 If no task found:
 {"tasks": [], "error": "Could not understand the task. Please speak again."}`;
@@ -141,6 +153,11 @@ If no task found:
       const isSelf = selfRefs.includes(assigneeRaw.toLowerCase());
       const recurrence = validRecur.includes(t.recurrence) ? t.recurrence : 'none';
       const priority   = t.priority === 'urgent' ? 'urgent' : 'normal';
+      const notes      = typeof t.notes === 'string' ? t.notes.trim() : '';
+      const subtasks   = Array.isArray(t.subtasks)
+        ? t.subtasks.map(s => String(s).trim()).filter(Boolean).slice(0, 10)
+            .map(text => ({ id: crypto.randomUUID(), text, done: false }))
+        : [];
 
       if (isSelf) {
         // Personal task — assigner & assignee both the current user
@@ -157,6 +174,8 @@ If no task found:
           status:      'pending',
           recurrence,
           priority,
+          notes,
+          subtasks,
           createdAt,
           updatedAt:   createdAt
         });
@@ -182,6 +201,8 @@ If no task found:
         status:      'pending',
         recurrence,
         priority,
+        notes,
+        subtasks,
         createdAt,
         updatedAt:   createdAt
       });
@@ -217,9 +238,11 @@ Extract every task mentioned. For each:
   - "by Friday"/"this Tuesday"/"tomorrow" are one-off deadlines → recurrence="none".
   - Default "none" when no clear recurring cue.
 - "priority": "urgent" if speech contains "urgent","ASAP","important","high/top priority","critical","right away","immediately"; else "normal".
+- "notes": extra context not needed in the title (amounts, addresses, IDs, agenda items, links). Empty string if none.
+- "subtasks": only if user enumerates steps ("with steps", "first X then Y then Z"). Otherwise empty array.
 
 JSON only:
-{"tasks":[{"description":"...","dueDate":"YYYY-MM-DD","time":"HH:MM","recurrence":"...","priority":"..."}]}
+{"tasks":[{"description":"...","dueDate":"YYYY-MM-DD","time":"HH:MM","recurrence":"...","priority":"...","notes":"...","subtasks":[]}]}
 
 If nothing usable: {"tasks":[],"error":"Could not understand. Please speak again."}`;
 
@@ -272,9 +295,63 @@ If nothing usable: {"tasks":[],"error":"Could not understand. Please speak again
       status:      'pending',
       recurrence:  validRecur.includes(t.recurrence) ? t.recurrence : 'none',
       priority:    t.priority === 'urgent' ? 'urgent' : 'normal',
+      notes:       typeof t.notes === 'string' ? t.notes.trim() : '',
+      subtasks:    Array.isArray(t.subtasks)
+        ? t.subtasks.map(s => String(s).trim()).filter(Boolean).slice(0, 10)
+            .map(text => ({ id: crypto.randomUUID(), text, done: false }))
+        : [],
       createdAt,
       updatedAt:   createdAt
     }));
+  },
+
+  // Ask Groq to break a task description into 3-6 concrete subtasks.
+  // Returns an array of plain-text steps; falls back to [] on any error so
+  // the caller can show a friendly message.
+  async breakIntoSteps(description) {
+    if (!description || !description.trim()) return [];
+
+    const systemPrompt = `Break a task into 3-6 short, actionable subtasks.
+Return ONLY a JSON object: {"steps": ["step 1", "step 2", "step 3"]}.
+Each step is an imperative phrase (max 8 words). No numbering, no markdown, no explanations.
+
+Example:
+Task: "Apply Australian Visa"
+→ {"steps": ["Get passport-size photo","Fill out DS-160 form","Pay $185 application fee","Schedule visa interview","Print confirmation page"]}
+
+Example:
+Task: "Plan team offsite"
+→ {"steps": ["Pick a date","Book a venue","Send invites","Plan agenda","Order food"]}`;
+
+    const payload = JSON.stringify({
+      model:           CONFIG.GROQ_MODEL,
+      messages:        [
+        { role: 'system', content: systemPrompt },
+        { role: 'user',   content: `Task: "${description.trim()}"` }
+      ],
+      temperature:     0.3,
+      response_format: { type: 'json_object' }
+    });
+
+    const useDirect = CONFIG.GROQ_API_KEY && CONFIG.GROQ_API_KEY !== 'YOUR_GROQ_API_KEY';
+    const res = useDirect
+      ? await fetch('https://api.groq.com/openai/v1/chat/completions', {
+          method:  'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${CONFIG.GROQ_API_KEY}` },
+          body: payload
+        })
+      : await fetch('/api/groq', {
+          method:  'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${Auth.token}` },
+          body: payload
+        });
+
+    if (!res.ok) throw new Error(`Groq error (${res.status})`);
+    const data = await res.json();
+    let parsed;
+    try { parsed = JSON.parse(data.choices?.[0]?.message?.content || ''); }
+    catch { return []; }
+    return Array.isArray(parsed?.steps) ? parsed.steps.map(s => String(s).trim()).filter(Boolean).slice(0, 8) : [];
   },
 
   // Fuzzy match: exact → startsWith → includes (case-insensitive)

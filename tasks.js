@@ -159,6 +159,109 @@ function nextDueDateForRecurrence(currentDueDate, currentTime, recurrence) {
   return { dueDate: _fmtDateISO(next), time: nextTime };
 }
 
+// ── Subtask + notes helpers ──────────────────────────────────────────────────
+
+function safeSubtasks(task) {
+  return Array.isArray(task?.subtasks) ? task.subtasks : [];
+}
+
+function subtaskProgress(task) {
+  const list = safeSubtasks(task);
+  if (!list.length) return null;
+  const done = list.filter(s => s.done).length;
+  return { done, total: list.length };
+}
+
+// Reusable HTML for subtask checklist (shown nested under parent description).
+function subtasksHTML(task) {
+  const list = safeSubtasks(task);
+  if (!list.length) return '';
+  return `
+    <ul class="task-subtasks">
+      ${list.map(s => `
+        <li class="subtask-row">
+          <input type="checkbox" class="subtask-check" data-task-id="${task.id}" data-subtask-id="${s.id}" ${s.done ? 'checked' : ''}/>
+          <span class="subtask-text ${s.done ? 'subtask-text--done' : ''}">${escapeHTML(s.text)}</span>
+        </li>
+      `).join('')}
+    </ul>
+  `;
+}
+
+// HTML block used in BOTH the Type sheet (creation) and inline edit form (editing).
+// Renders: notes textarea + subtasks list (with delete X buttons) + add-row + Break into Steps button.
+// idPrefix isolates input IDs for parallel forms (e.g. 'add' vs 'edit-<taskId>').
+function notesAndSubtasksFormHTML(task, idPrefix) {
+  const notes = task?.notes ?? '';
+  const list  = safeSubtasks(task);
+  const rows = list.map(s => `
+    <div class="subtask-edit-row" data-subtask-id="${s.id}">
+      <input type="checkbox" class="subtask-edit-check" ${s.done ? 'checked' : ''}/>
+      <input type="text" class="subtask-edit-text" value="${escapeHTML(s.text)}"/>
+      <button type="button" class="subtask-edit-remove" aria-label="Remove subtask">&#x2715;</button>
+    </div>
+  `).join('');
+
+  return `
+    <label class="add-task-field-label">Notes (optional)</label>
+    <textarea id="${idPrefix}-notes" class="add-task-input add-task-notes" rows="3"
+      placeholder="Extra context — amounts, addresses, agenda…">${escapeHTML(notes)}</textarea>
+
+    <label class="add-task-field-label">Subtasks (optional)</label>
+    <div id="${idPrefix}-subtasks" class="subtask-edit-list" data-task-id="${task?.id ?? ''}">${rows}</div>
+    <div class="subtask-add-row">
+      <input type="text" id="${idPrefix}-subtask-new" class="add-task-input subtask-add-input" placeholder="Add a subtask…"/>
+      <button type="button" class="subtask-add-btn" data-target="${idPrefix}-subtasks">+ Add</button>
+    </div>
+    <button type="button" class="break-into-steps-btn" data-target="${idPrefix}-subtasks">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14">
+        <polyline points="12 19 5 12 12 5"/><polyline points="19 19 12 12 19 5"/>
+      </svg>
+      Break into steps with AI
+    </button>
+  `;
+}
+
+// Read subtasks back out of a rendered notesAndSubtasksFormHTML block.
+// Returns the JSON-ready array: [{id, text, done}, ...]. Empty-text rows are dropped.
+function readSubtasksFromForm(containerEl) {
+  if (!containerEl) return [];
+  return Array.from(containerEl.querySelectorAll('.subtask-edit-row')).map(row => ({
+    id:   row.dataset.subtaskId || crypto.randomUUID(),
+    text: row.querySelector('.subtask-edit-text').value.trim(),
+    done: row.querySelector('.subtask-edit-check').checked
+  })).filter(s => s.text.length > 0);
+}
+
+// Build a new subtask-edit-row DOM node (used when user clicks + Add or after AI break-down).
+function makeSubtaskRow(text = '', done = false) {
+  const row = document.createElement('div');
+  row.className = 'subtask-edit-row';
+  row.dataset.subtaskId = crypto.randomUUID();
+  row.innerHTML = `
+    <input type="checkbox" class="subtask-edit-check" ${done ? 'checked' : ''}/>
+    <input type="text" class="subtask-edit-text" value="${escapeHTML(text)}"/>
+    <button type="button" class="subtask-edit-remove" aria-label="Remove subtask">&#x2715;</button>
+  `;
+  return row;
+}
+
+// Small inline clipboard icon + 1-line preview of notes.
+function notesPreviewHTML(task) {
+  const notes = (task?.notes ?? '').trim();
+  if (!notes) return '';
+  const preview = notes.length > 80 ? notes.slice(0, 78) + '…' : notes;
+  return `
+    <div class="task-notes-preview" title="${escapeHTML(notes)}">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="11" height="11">
+        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+        <polyline points="14 2 14 8 20 8"/>
+      </svg>
+      <span>${escapeHTML(preview)}</span>
+    </div>
+  `;
+}
+
 function escapeHTML(str) {
   if (str == null) return '';
   return String(str)
@@ -278,6 +381,8 @@ function taskCardHTML(task, nameMap = {}, opts = {}) {
   const createdLabel = formatCreatedAt(task.createdAt);
   const recurLabel   = recurrenceLabel(task.recurrence);
   const urgentMark   = task.priority === 'urgent' ? '<span class="task-urgent-mark" title="Urgent">!</span>' : '';
+  const progress     = subtaskProgress(task);
+  const progressBadge = progress ? `<span class="subtask-progress">${progress.done}/${progress.total}</span>` : '';
 
   return `
     <div class="task-card ${cardClass}">
@@ -285,8 +390,10 @@ function taskCardHTML(task, nameMap = {}, opts = {}) {
         ${isCompleted ? `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>` : ''}
       </button>
       <div class="task-body">
-        <div class="task-desc ${isCompleted ? 'task-desc--done' : ''}">${urgentMark}${escapeHTML(task.description)}</div>
+        <div class="task-desc ${isCompleted ? 'task-desc--done' : ''}">${urgentMark}${escapeHTML(task.description)}${progressBadge}</div>
         ${metaParts.length ? `<div class="task-date ${dateClass}">${metaParts.map(escapeHTML).join(' · ')}</div>` : ''}
+        ${notesPreviewHTML(task)}
+        ${subtasksHTML(task)}
         ${recurLabel ? `<div class="task-recur-chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="10" height="10"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>${escapeHTML(recurLabel)}</div>` : ''}
         ${createdLabel ? `<div class="task-added-at">Added ${escapeHTML(createdLabel)}</div>` : ''}
         ${selfAdded ? `<div class="task-self-added">Added by assignee</div>` : ''}
