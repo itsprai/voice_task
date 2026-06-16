@@ -1418,6 +1418,16 @@ input[type="time"]::-webkit-date-and-time-value {
 }
 .voice-overlay-stop:active { transform: scale(0.96); background: rgba(255,255,255,0.26); }
 .voice-overlay-hint { color: rgba(255,255,255,0.5); font-size: 11px; font-weight: 600; letter-spacing: 0.22em; text-transform: uppercase; min-height: 14px; }
+.voice-overlay-tip {
+  color: rgba(255,255,255,0.65);
+  font-size: 13px;
+  font-style: italic;
+  text-align: center;
+  margin: 10px 24px 0;
+  max-width: 320px;
+  line-height: 1.4;
+}
+.voice-overlay-tip.hidden { display: none; }
 
 .voice-overlay-result { width: 100%; max-width: 420px; animation: fade-in 0.25s ease; position: relative; }
 

@@ -675,7 +675,7 @@ const App = {
         <div class="sheet-grabber"></div>
         <p class="sheet-title">Add a task</p>
         <p class="sheet-context">${ctx}</p>
-        <input type="text" id="add-task-desc" class="add-task-input" placeholder="Task description…" autocomplete="off"/>
+        <input type="text" id="add-task-desc" class="add-task-input" placeholder='e.g. "Plan launch" — put details in notes, steps in subtasks' autocomplete="off"/>
         <label class="add-task-field-label" for="add-task-date">Date</label>
         <input type="date" id="add-task-date" class="add-task-date"/>
         <label class="add-task-field-label" for="add-task-time">Time</label>
@@ -783,8 +783,8 @@ const App = {
     if (input) { input.value = ''; input.focus(); }
   },
 
-  // Ask Groq to break the current task description into 3-6 subtasks,
-  // append them all to the matching subtask list.
+  // Ask Groq to break the current task description (+ notes) into concrete
+  // grounded subtasks, append them to the matching subtask list.
   async _breakIntoSteps(btn) {
     const targetId = btn.dataset.target;
     const list     = document.getElementById(targetId);
@@ -800,14 +800,22 @@ const App = {
       return;
     }
 
+    // The notes textarea sits in the same form; derive its id from the
+    // subtask list's id (idPrefix-subtasks → idPrefix-notes).
+    const notesId = targetId.replace(/-subtasks$/, '-notes');
+    const notes   = document.getElementById(notesId)?.value.trim() || '';
+
     const originalText = btn.innerHTML;
     btn.disabled = true;
     btn.innerHTML = 'Thinking…';
 
     try {
-      const steps = await Parser.breakIntoSteps(desc);
+      const steps = await Parser.breakIntoSteps(desc, notes);
       if (!steps?.length) {
-        this.showToast('Could not break it down — try again', true);
+        this.showToast(
+          notes ? 'Could not break it down — try again' : 'Add a few details in notes so the AI can break it down',
+          true
+        );
         return;
       }
       steps.forEach(text => list.appendChild(makeSubtaskRow(text, false)));
@@ -879,12 +887,25 @@ const App = {
     }
   },
 
+  // Example phrases shown below the mic while listening. Each illustrates one
+  // capability the parser supports (notes, subtasks, recurrence, urgency,
+  // delegation). A random one is picked every time the overlay opens.
+  _voiceTips: [
+    'Try: "Pay rent of 1850 to landlord by the 5th"',
+    'Try: "Plan launch — slides, demo, press release"',
+    'Try: "Standup every weekday at 10am"',
+    'Try: "Ask Sarah to send the Q4 report urgently"',
+    'Try: "Submit timesheet every Friday for 4 weeks"',
+    'Try: "Remind me every Monday and Thursday to ping client"'
+  ],
+
   // phase: 'listening' | 'processing' | 'saved'
   _setVoiceOverlayPhase(phase) {
     const mic    = document.getElementById('voice-overlay-mic');
     const eq     = document.getElementById('voice-overlay-eq');
     const stop   = document.getElementById('voice-overlay-stop');
     const hint   = document.getElementById('voice-overlay-hint');
+    const tip    = document.getElementById('voice-overlay-tip');
     const text   = document.getElementById('voice-overlay-text');
     const result = document.getElementById('voice-overlay-result');
     if (!mic) return;
@@ -895,6 +916,14 @@ const App = {
     text?.classList.toggle('hidden',  phase === 'saved');
     result?.classList.toggle('hidden', phase !== 'saved');
     if (hint) hint.textContent = phase === 'processing' ? 'Saving…' : listening ? 'Listening…' : '';
+    if (tip) {
+      if (listening) {
+        tip.textContent = this._voiceTips[Math.floor(Math.random() * this._voiceTips.length)];
+        tip.classList.remove('hidden');
+      } else {
+        tip.classList.add('hidden');
+      }
+    }
   },
 
   _showVoiceOverlayResult(tasks) {

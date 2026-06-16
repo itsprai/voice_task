@@ -163,7 +163,7 @@ function renderAssigneeAddTaskForm(assigners, activeAssignerId) {
       <div class="sheet-grabber"></div>
       <p class="sheet-title">Add a task</p>
       ${contextLine}
-      <input type="text" id="add-assignee-task-desc" class="add-task-input" placeholder="Task description…" autocomplete="off"/>
+      <input type="text" id="add-assignee-task-desc" class="add-task-input" placeholder='e.g. "Send report" — put details in notes, steps in subtasks' autocomplete="off"/>
       <label class="add-task-field-label" for="add-assignee-task-date">Date</label>
       <input type="date" id="add-assignee-task-date" class="add-task-date"/>
       <label class="add-task-field-label" for="add-assignee-task-time">Time</label>

@@ -25,17 +25,52 @@ Today is ${todayLabel} (${todayISO}). Current time is ${currentTime}.
 
 The manager's team: ${teamNames}. Team-member names must match this list exactly (case-insensitive).
 
-Extract EVERY task mentioned. Each task has its OWN assignee, date, time, and recurrence.
+SPLIT vs MERGE — decide carefully whether the speech contains ONE task or MULTIPLE tasks.
+
+Bias HEAVILY toward ONE task. Most real-world utterances are a single action plus surrounding context.
+
+Output MULTIPLE tasks ONLY when there are clearly distinct actions AND at least one of these is true:
+  - different assignees (one for Sarah, one for Mike)
+  - different dates/times that aren't shared context (call at 5pm, pay rent tomorrow)
+  - independent goals with no shared purpose (call mom, file expense report)
+
+Output ONE task (with notes / subtasks) when:
+  - The speech is one main action with surrounding context (where, when, who-with, why, with-what details).
+  - The "extra parts" are details, agenda items, or sub-steps of executing ONE goal.
+  - Same assignee, same general topic, even if multiple sentences.
+
+Examples of ONE task (do NOT split — collapse details into notes/subtasks):
+  - "Ask Sarah to prepare the Acme client presentation, focus on Q4 numbers, meeting is Thursday at 3pm"
+      → 1 task to Sarah, description "Prepare Acme client presentation", time "15:00", dueDate=Thursday,
+        notes "Focus on Q4 numbers"
+  - "Call mom about her doctor appointment, ask what the doctor said and whether she needs medicine"
+      → 1 task to Me, description "Call mom", notes "Discuss doctor appointment, what doctor said, whether she needs medicine"
+  - "Plan the office party — book the venue, order food, send invites"
+      → 1 task to Me, description "Plan the office party", subtasks ["Book venue","Order food","Send invites"]
+  - "Pay rent of 1850 dollars to the landlord by the 5th via NEFT"
+      → 1 task, description "Pay rent", notes "$1850 to landlord by 5th, NEFT"
+
+Examples of MULTIPLE tasks (DO split):
+  - "Ask Sarah to send the report by Friday and have Mike review the slides by Monday"
+      → 2 tasks: one to Sarah (Friday), one to Mike (Monday)
+  - "Remind me to call mom at 5pm and pay the rent tomorrow"
+      → 2 tasks: call mom (today 17:00), pay rent (tomorrow)
+  - "Get Aditya to fix the deploy bug and Anil to update the docs"
+      → 2 tasks: one to Aditya, one to Anil
+
+When in DOUBT between split and merge → MERGE into one task with notes. Splitting a single task wrongly is much worse than missing a split.
 
 NOTES — extra context that doesn't belong in the short task title goes in "notes":
 - Amounts ("12,500 INR", "$185"), addresses, IDs, agenda items, names, deadlines beyond the due date,
   links, phone numbers, instructions ("include itemized invoice", "ask Aditya for login").
-- Keep description SHORT and imperative. Push details to notes.
+- Anything the assignee needs to know to execute the task, but that doesn't fit in a short title.
+- Keep description SHORT and imperative (≤7 words ideally). Push details to notes.
 - If no extra context, notes = "".
 
-SUBTASKS — only if user explicitly enumerates steps. Triggers: "with subtasks", "with steps", "and then", "first X then Y then Z", or a clear list of items inside one task.
+SUBTASKS — only when the user enumerates concrete sub-steps inside ONE task. Triggers: "with subtasks", "with steps", "first X then Y then Z", "by doing A, B, and C", or a clear enumerated list of sub-actions sharing one parent goal.
 - If detected, output as an array of short imperative phrases.
 - If not detected, subtasks = [].
+- Items that are just CONTEXT (names, places, dates) belong in notes, NOT subtasks.
 
 PRIORITY — set "priority" to "urgent" when speech contains words like:
 - "urgent", "urgently", "ASAP", "important", "high priority", "top priority",
@@ -243,8 +278,36 @@ If no task found:
     const systemPrompt = `Extract task details from the user's speech.
 Today is ${todayLabel} (${todayISO}). Current time is ${currentTime}.
 
-Extract every task mentioned. For each:
-- "description": imperative phrase. Strip "remind me to", "I need to", "I have to", and recurrence words from description.
+SPLIT vs MERGE — decide carefully whether the speech is ONE task or MULTIPLE tasks.
+
+Bias HEAVILY toward ONE task. Most utterances are a single action plus surrounding context.
+
+Output MULTIPLE tasks ONLY when there are clearly distinct actions AND at least one of these is true:
+  - different dates/times that aren't shared context (call at 5pm, pay rent tomorrow)
+  - independent goals with no shared purpose (call mom, file expenses)
+
+Output ONE task (with notes / subtasks) when:
+  - The speech is one main action with surrounding context (where, when, why, with-what details).
+  - The "extra parts" are details, agenda items, or sub-steps of executing ONE goal.
+
+Examples of ONE task (do NOT split):
+  - "Pay rent of 1850 dollars to the landlord by the 5th via NEFT"
+      → 1 task "Pay rent", notes "$1850 to landlord by 5th, NEFT"
+  - "Call mom about her doctor appointment, ask what the doctor said and whether she needs medicine"
+      → 1 task "Call mom", notes "Discuss doctor appointment, what doctor said, whether she needs medicine"
+  - "Plan the office party — book the venue, order food, send invites"
+      → 1 task "Plan office party", subtasks ["Book venue","Order food","Send invites"]
+
+Examples of MULTIPLE tasks (DO split):
+  - "Remind me to call mom at 5pm and pay the rent tomorrow"
+      → 2 tasks: call mom (today 17:00), pay rent (tomorrow)
+  - "Email the report and then go for a run"
+      → 2 tasks: independent goals
+
+When in DOUBT → MERGE. Splitting a single task wrongly is worse than missing a split.
+
+For each task return:
+- "description": imperative phrase, SHORT (≤7 words ideally). Strip "remind me to", "I need to", "I have to", and recurrence words from description.
 - "dueDate": YYYY-MM-DD. Use ${todayISO} if no date. For recurring tasks this is the FIRST occurrence.
   - "today"=${todayISO}, "tomorrow"=next day, "this/next [weekday]", "end of week"=Friday.
 - "time": HH:MM 24-hour. Use ${currentTime} if no time.
@@ -338,31 +401,66 @@ If nothing usable: {"tasks":[],"error":"Could not understand. Please speak again
     });
   },
 
-  // Ask Groq to break a task description into 3-6 concrete subtasks.
-  // Returns an array of plain-text steps; falls back to [] on any error so
-  // the caller can show a friendly message.
-  async breakIntoSteps(description) {
-    if (!description || !description.trim()) return [];
+  // Ask Groq to break a task description (+ optional notes) into concrete,
+  // grounded subtasks. Returns an array of plain-text steps; falls back to []
+  // on any error or when there's nothing to ground on.
+  async breakIntoSteps(description, notes = '') {
+    const desc = (description || '').trim();
+    const ctx  = (notes || '').trim();
+    if (!desc) return [];
 
-    const systemPrompt = `Break a task into 3-6 short, actionable subtasks.
-Return ONLY a JSON object: {"steps": ["step 1", "step 2", "step 3"]}.
-Each step is an imperative phrase (max 8 words). No numbering, no markdown, no explanations.
+    const systemPrompt = `Break a task into actionable subtasks, GROUNDED in the description and notes the user provided.
 
-Example:
-Task: "Apply Australian Visa"
-→ {"steps": ["Get passport-size photo","Fill out DS-160 form","Pay $185 application fee","Schedule visa interview","Print confirmation page"]}
+HARD RULES:
+1. Every step must be a concrete action explicitly implied by the description OR notes. Do NOT invent steps that go beyond what the user said.
+2. Use specific names, amounts, dates, places from the notes VERBATIM when phrasing steps.
+3. NEVER output generic filler steps like "research the problem", "plan the approach", "verify everything", "follow up as needed", or "track status". If you cannot ground a step in the input, do not output it.
+4. Step count scales with complexity:
+   - Trivial task with no notes → return {"steps": []} (empty array). Be honest when there's nothing to break down.
+   - Simple task → 2-3 steps.
+   - Complex task with rich notes → up to 6 steps.
+5. Each step is a SHORT imperative phrase (max 10 words). No numbering, no markdown, no explanations.
+6. Do NOT restate the main action as its own step. Steps execute the task; they don't repeat it.
 
-Example:
-Task: "Plan team offsite"
-→ {"steps": ["Pick a date","Book a venue","Send invites","Plan agenda","Order food"]}`;
+Return ONLY a JSON object: {"steps": ["step 1", "step 2"]}.
+
+Examples:
+
+Task: "Pay rent"
+Notes: ""
+→ {"steps": []}   ← nothing to ground; return empty rather than invent steps
+
+Task: "Pay rent"
+Notes: "$1850 to landlord by 5th via NEFT"
+→ {"steps": ["Transfer $1850 via NEFT to landlord", "Send him the UTR by 5th"]}
+
+Task: "Send prescription"
+Notes: "Rich Tyagi · Apollo Pharmacy · BP meds"
+→ {"steps": ["Pull Rich Tyagi's BP prescription", "Submit to Apollo Pharmacy", "Share confirmation with Rich"]}
+
+Task: "Prepare client demo"
+Notes: "Acme, Thursday 3pm, focus on Q4 numbers + new pricing"
+→ {"steps": ["Pull Q4 numbers", "Add new pricing slide", "Run through deck before Thu 3pm"]}
+
+Task: "Plan office party"
+Notes: "Dec 15, venue + catering + invites"
+→ {"steps": ["Book venue for Dec 15", "Arrange catering", "Send invites"]}
+
+Task: "Email client"
+Notes: ""
+→ {"steps": []}`;
+
+    const userPrompt = ctx
+      ? `Description: "${desc}"\nNotes: "${ctx}"`
+      : `Description: "${desc}"\nNotes: ""`;
 
     const payload = JSON.stringify({
       model:           CONFIG.GROQ_MODEL,
       messages:        [
         { role: 'system', content: systemPrompt },
-        { role: 'user',   content: `Task: "${description.trim()}"` }
+        { role: 'user',   content: userPrompt }
       ],
-      temperature:     0.3,
+      temperature:     0.2,
       response_format: { type: 'json_object' }
     });
 
