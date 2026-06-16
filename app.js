@@ -111,12 +111,49 @@ const App = {
         await this._breakIntoSteps(breakBtn);
         return;
       }
+
+      // Toggle a weekday pill in the custom recurrence builder
+      const dayPill = e.target.closest('.custom-recur-daypill');
+      if (dayPill) {
+        e.preventDefault();
+        dayPill.classList.toggle('is-on');
+        return;
+      }
     });
 
     document.body.addEventListener('change', async e => {
       const t = e.target;
-      if (!t || !t.id) return;
+      if (!t) return;
 
+      // Show/hide the custom recurrence builder when the Repeat select changes
+      if (t.matches && t.matches('select[data-custom-wrap]')) {
+        const wrap = document.getElementById(`${t.dataset.customWrap}-wrap`);
+        if (wrap) wrap.classList.toggle('is-hidden', t.value !== 'custom');
+        return;
+      }
+
+      // Custom builder — when unit changes to/from 'weeks', show/hide byDays
+      if (t.classList && t.classList.contains('custom-recur-unit')) {
+        const block = t.closest('.custom-recur-block');
+        const byDays = block?.querySelector('.custom-recur-bydays');
+        if (byDays) byDays.classList.toggle('is-hidden', t.value !== 'weeks');
+        return;
+      }
+
+      // Custom builder — end-type radios: enable/disable the paired input
+      if (t.matches && t.matches('input[type="radio"][name$="-custom-end"]')) {
+        const block = t.closest('.custom-recur-block');
+        if (block) {
+          const prefix = block.dataset.prefix;
+          const onInput    = document.getElementById(`${prefix}-custom-enddate`);
+          const countInput = document.getElementById(`${prefix}-custom-endcount`);
+          if (onInput)    onInput.disabled    = t.value !== 'on';
+          if (countInput) countInput.disabled = t.value !== 'count';
+        }
+        return;
+      }
+
+      if (!t.id) return;
       if (t.id === 'settings-notif-enabled') {
         await this._handleNotifToggle(t);
       } else if (t.id === 'settings-daily-enabled') {
@@ -644,7 +681,8 @@ const App = {
         <label class="add-task-field-label" for="add-task-time">Time</label>
         <input type="time" id="add-task-time" class="add-task-date"/>
         <label class="add-task-field-label" for="add-task-recurrence">Repeat</label>
-        <select id="add-task-recurrence" class="add-task-input add-task-select">${recurOpts}</select>
+        <select id="add-task-recurrence" class="add-task-input add-task-select" data-custom-wrap="add-task-custom-recur">${recurOpts}</select>
+        <div class="custom-recur-wrap is-hidden" id="add-task-custom-recur-wrap">${customRuleFormHTML(null, 'add-task')}</div>
         <label class="add-task-urgent-row">
           <input type="checkbox" id="add-task-urgent"/>
           <span>Mark as urgent</span>
@@ -680,28 +718,30 @@ const App = {
     const _date  = dateInput.value || new Date().toISOString().split('T')[0];
     const _time  = timeInput?.value || new Date().toTimeString().slice(0, 5);
     const _recur = document.getElementById('add-task-recurrence')?.value || 'none';
+    const _rule  = _recur === 'custom' ? readCustomRuleFromForm('add-task') : null;
     const _urgent = document.getElementById('add-task-urgent')?.checked || false;
     const _notes  = document.getElementById('add-task-notes')?.value.trim() || '';
     const _subs   = readSubtasksFromForm(document.getElementById('add-task-subtasks'));
 
     const newTask = {
-      id:          crypto.randomUUID(),
-      raw:         '',
-      description: desc,
-      assignee:    member.full_name,
-      assignee_id: member.id,
-      assigner_id: Auth.profile.id,
-      added_by:    Auth.profile.id,
-      dueDate:     _date,
-      time:        _time,
-      dueAt:       new Date(`${_date}T${_time}`).getTime(),
-      status:      'pending',
-      recurrence:  _recur,
-      priority:    _urgent ? 'urgent' : 'normal',
-      notes:       _notes,
-      subtasks:    _subs,
-      createdAt:   new Date().toISOString(),
-      updatedAt:   new Date().toISOString()
+      id:              crypto.randomUUID(),
+      raw:             '',
+      description:     desc,
+      assignee:        member.full_name,
+      assignee_id:     member.id,
+      assigner_id:     Auth.profile.id,
+      added_by:        Auth.profile.id,
+      dueDate:         _date,
+      time:            _time,
+      dueAt:           new Date(`${_date}T${_time}`).getTime(),
+      status:          'pending',
+      recurrence:      _recur,
+      recurrence_rule: _rule,
+      priority:        _urgent ? 'urgent' : 'normal',
+      notes:           _notes,
+      subtasks:        _subs,
+      createdAt:       new Date().toISOString(),
+      updatedAt:       new Date().toISOString()
     };
 
     this.state.tasks = Storage.add(newTask);
@@ -712,7 +752,7 @@ const App = {
     this._updatePipelineBadge();
     const toastMsg = _urgent
       ? 'Urgent task added!'
-      : (_recur !== 'none' ? `Recurring task added (${recurrenceLabel(_recur).toLowerCase()})` : 'Task added!');
+      : (_recur !== 'none' ? `Recurring task added (${recurrenceLabel(_recur, _rule).toLowerCase()})` : 'Task added!');
     this.showToast(toastMsg);
   },
 
@@ -784,18 +824,19 @@ const App = {
   // Skips silently for non-recurring tasks.
   _maybeGenerateNextRecurrence(task) {
     if (!task || !task.recurrence || task.recurrence === 'none') return;
-    const next = nextDueDateForRecurrence(task.dueDate, task.time, task.recurrence);
-    if (!next) return;
+    const next = nextDueDateForRecurrence(task.dueDate, task.time, task.recurrence, task.recurrence_rule);
+    if (!next) return; // end of chain (e.g. custom + endType cutoff reached)
     const nowIso  = new Date().toISOString();
     const nextTask = {
       ...task,
-      id:          crypto.randomUUID(),
-      status:      'pending',
-      dueDate:     next.dueDate,
-      time:        next.time,
-      dueAt:       next.dueDate && next.time ? new Date(`${next.dueDate}T${next.time}`).getTime() : null,
-      createdAt:   nowIso,
-      updatedAt:   nowIso
+      id:              crypto.randomUUID(),
+      status:          'pending',
+      dueDate:         next.dueDate,
+      time:            next.time,
+      dueAt:           next.dueDate && next.time ? new Date(`${next.dueDate}T${next.time}`).getTime() : null,
+      recurrence_rule: next.ruleUpdate ?? task.recurrence_rule ?? null,
+      createdAt:       nowIso,
+      updatedAt:       nowIso
     };
     this.state.tasks = Storage.add(nextTask);
     Notifications.scheduleLocal(nextTask);
@@ -862,7 +903,7 @@ const App = {
     result.innerHTML = `
       <p class="preview-label">✓ ${tasks.length > 1 ? tasks.length + ' tasks saved' : 'Task saved'}</p>
       ${tasks.map(t => {
-        const recurLbl = recurrenceLabel(t.recurrence);
+        const recurLbl = recurrenceLabel(t.recurrence, t.recurrence_rule);
         const isUrgent = t.priority === 'urgent';
         return `
         <div class="preview-item">
@@ -1513,28 +1554,30 @@ const App = {
       const _date   = dateInput.value || new Date().toISOString().split('T')[0];
       const _time   = timeInput?.value || new Date().toTimeString().slice(0, 5);
       const _recur  = document.getElementById('add-assignee-task-recurrence')?.value || 'none';
+      const _rule   = _recur === 'custom' ? readCustomRuleFromForm('add-assignee-task') : null;
       const _urgent = document.getElementById('add-assignee-task-urgent')?.checked || false;
       const _notes  = document.getElementById('add-assignee-task-notes')?.value.trim() || '';
       const _subs   = readSubtasksFromForm(document.getElementById('add-assignee-task-subtasks'));
 
       const newTask = {
-        id:          crypto.randomUUID(),
-        raw:         '',
-        description: desc,
-        assignee:    Auth.profile.full_name,
-        assignee_id: Auth.profile.id,
-        assigner_id: assignerId,
-        added_by:    Auth.profile.id,
-        dueDate:     _date,
-        time:        _time,
-        dueAt:       new Date(`${_date}T${_time}`).getTime(),
-        status:      'pending',
-        recurrence:  _recur,
-        priority:    _urgent ? 'urgent' : 'normal',
-        notes:       _notes,
-        subtasks:    _subs,
-        createdAt:   new Date().toISOString(),
-        updatedAt:   new Date().toISOString()
+        id:              crypto.randomUUID(),
+        raw:             '',
+        description:     desc,
+        assignee:        Auth.profile.full_name,
+        assignee_id:     Auth.profile.id,
+        assigner_id:     assignerId,
+        added_by:        Auth.profile.id,
+        dueDate:         _date,
+        time:            _time,
+        dueAt:           new Date(`${_date}T${_time}`).getTime(),
+        status:          'pending',
+        recurrence:      _recur,
+        recurrence_rule: _rule,
+        priority:        _urgent ? 'urgent' : 'normal',
+        notes:           _notes,
+        subtasks:        _subs,
+        createdAt:       new Date().toISOString(),
+        updatedAt:       new Date().toISOString()
       };
 
       this.state.tasks = Storage.add(newTask);
@@ -1545,7 +1588,7 @@ const App = {
       this._updateAssigneeBadge();
       const toastMsg = _urgent
         ? 'Urgent task added!'
-        : (_recur !== 'none' ? `Recurring task added (${recurrenceLabel(_recur).toLowerCase()})` : 'Task added!');
+        : (_recur !== 'none' ? `Recurring task added (${recurrenceLabel(_recur, _rule).toLowerCase()})` : 'Task added!');
       this.showToast(toastMsg);
     });
   },

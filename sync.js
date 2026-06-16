@@ -108,10 +108,11 @@ const Sync = {
       time:        task.time        ?? null,
       dueAt:       task.dueAt ? new Date(task.dueAt).getTime() : null,
       raw:         task.raw         ?? '',
-      recurrence:  task.recurrence  ?? 'none',
-      priority:    task.priority    ?? 'normal',
-      notes:       task.notes       ?? '',
-      subtasks:    Array.isArray(task.subtasks) ? task.subtasks : [],
+      recurrence:      task.recurrence      ?? 'none',
+      recurrence_rule: task.recurrence_rule ?? null,
+      priority:        task.priority        ?? 'normal',
+      notes:           task.notes           ?? '',
+      subtasks:        Array.isArray(task.subtasks) ? task.subtasks : [],
       createdAt:   task.createdAt   ?? new Date().toISOString(),
       updatedAt:   new Date().toISOString()
     };

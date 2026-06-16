@@ -173,7 +173,7 @@ function pipelineCardHTML(task, editMode, editingTaskId) {
   ` : '';
 
   const createdLabel = formatCreatedAt(task.createdAt);
-  const recurLabel   = recurrenceLabel(task.recurrence);
+  const recurLabel   = recurrenceLabel(task.recurrence, task.recurrence_rule);
   const urgentMark   = task.priority === 'urgent' ? '<span class="task-urgent-mark" title="Urgent">!</span>' : '';
   const progress     = subtaskProgress(task);
   const progressBadge = progress ? `<span class="subtask-progress">${progress.done}/${progress.total}</span>` : '';

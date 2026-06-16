@@ -72,19 +72,20 @@ CREATE TABLE IF NOT EXISTS public.tasks (
   added_by    UUID        REFERENCES public.profiles(id)
 );
 ALTER TABLE public.tasks
-  ADD COLUMN IF NOT EXISTS assigner_id UUID REFERENCES public.profiles(id),
-  ADD COLUMN IF NOT EXISTS assignee_id UUID REFERENCES public.profiles(id),
-  ADD COLUMN IF NOT EXISTS added_by    UUID REFERENCES public.profiles(id),
-  ADD COLUMN IF NOT EXISTS recurrence  TEXT  NOT NULL DEFAULT 'none',
-  ADD COLUMN IF NOT EXISTS priority    TEXT  NOT NULL DEFAULT 'normal',
-  ADD COLUMN IF NOT EXISTS notes       TEXT  NOT NULL DEFAULT '',
-  ADD COLUMN IF NOT EXISTS subtasks    JSONB NOT NULL DEFAULT '[]'::jsonb;
+  ADD COLUMN IF NOT EXISTS assigner_id     UUID REFERENCES public.profiles(id),
+  ADD COLUMN IF NOT EXISTS assignee_id     UUID REFERENCES public.profiles(id),
+  ADD COLUMN IF NOT EXISTS added_by        UUID REFERENCES public.profiles(id),
+  ADD COLUMN IF NOT EXISTS recurrence      TEXT  NOT NULL DEFAULT 'none',
+  ADD COLUMN IF NOT EXISTS recurrence_rule JSONB,
+  ADD COLUMN IF NOT EXISTS priority        TEXT  NOT NULL DEFAULT 'normal',
+  ADD COLUMN IF NOT EXISTS notes           TEXT  NOT NULL DEFAULT '',
+  ADD COLUMN IF NOT EXISTS subtasks        JSONB NOT NULL DEFAULT '[]'::jsonb;
 
 -- CHECK constraints (re-runnable: dropped + readded)
 ALTER TABLE public.tasks DROP CONSTRAINT IF EXISTS tasks_recurrence_check;
 ALTER TABLE public.tasks
   ADD CONSTRAINT tasks_recurrence_check
-  CHECK (recurrence IN ('none','hourly','daily','weekdays','weekends','weekly','fortnightly','monthly','quarterly','biannually','yearly'));
+  CHECK (recurrence IN ('none','hourly','daily','weekdays','weekends','weekly','fortnightly','monthly','quarterly','biannually','yearly','custom'));
 
 ALTER TABLE public.tasks DROP CONSTRAINT IF EXISTS tasks_priority_check;
 ALTER TABLE public.tasks

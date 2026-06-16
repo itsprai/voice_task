@@ -721,6 +721,68 @@ body::before {
 .break-into-steps-btn:hover  { background: var(--primary-soft); }
 .break-into-steps-btn:disabled { opacity: 0.6; cursor: default; }
 
+/* Custom recurrence builder — shown when Repeat = "Custom" */
+.custom-recur-wrap.is-hidden { display: none; }
+.custom-recur-block {
+  background: var(--primary-soft, #f4f4fb);
+  border: 1px solid var(--border, #e3e4e8);
+  border-radius: 10px;
+  padding: 10px 12px;
+  margin: 4px 0 8px;
+  display: flex; flex-direction: column; gap: 10px;
+}
+.custom-recur-row {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  font-size: 14px; color: var(--text);
+}
+.custom-recur-interval {
+  width: 64px; padding: 6px 8px;
+  border: 1px solid var(--border); border-radius: 6px;
+  background: var(--bg); color: var(--text); font-size: 14px;
+  text-align: center;
+}
+.custom-recur-unit {
+  padding: 6px 8px;
+  border: 1px solid var(--border); border-radius: 6px;
+  background: var(--bg); color: var(--text); font-size: 14px;
+}
+.custom-recur-bydays.is-hidden { display: none; }
+.custom-recur-daypills {
+  display: flex; gap: 6px; flex-wrap: wrap;
+}
+.custom-recur-daypill {
+  width: 30px; height: 30px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  font-size: 12px; font-weight: 600;
+  cursor: pointer; user-select: none;
+  display: inline-flex; align-items: center; justify-content: center;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+.custom-recur-daypill.is-on {
+  background: var(--primary, #5a67d8);
+  border-color: var(--primary, #5a67d8);
+  color: #fff;
+}
+.custom-recur-end { display: flex; flex-direction: column; gap: 6px; }
+.custom-recur-endopt {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 14px; color: var(--text);
+  flex-wrap: wrap;
+}
+.custom-recur-endopt input[type="radio"] { width: 16px; height: 16px; accent-color: var(--primary); }
+.custom-recur-enddate,
+.custom-recur-endcount {
+  padding: 4px 8px;
+  border: 1px solid var(--border); border-radius: 6px;
+  background: var(--bg); color: var(--text); font-size: 13px;
+}
+.custom-recur-endcount { width: 60px; text-align: center; }
+.custom-recur-enddate:disabled,
+.custom-recur-endcount:disabled { opacity: 0.45; }
+
 /* Urgent toggle row inside add-task / edit forms */
 .add-task-urgent-row,
 .pipeline-edit-urgent-row {

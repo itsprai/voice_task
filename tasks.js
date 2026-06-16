@@ -92,12 +92,49 @@ const RECURRENCE_OPTIONS = [
   { value: 'monthly',      label: 'Monthly' },
   { value: 'quarterly',    label: 'Every 3 months' },
   { value: 'biannually',   label: 'Every 6 months' },
-  { value: 'yearly',       label: 'Yearly' }
+  { value: 'yearly',       label: 'Yearly' },
+  { value: 'custom',       label: 'Custom…' }
 ];
 
-function recurrenceLabel(value) {
-  const found = RECURRENCE_OPTIONS.find(o => o.value === value);
-  return found ? found.label : '';
+const WEEKDAY_KEYS = ['sun','mon','tue','wed','thu','fri','sat'];
+const WEEKDAY_NAMES_SHORT = { sun:'Sun', mon:'Mon', tue:'Tue', wed:'Wed', thu:'Thu', fri:'Fri', sat:'Sat' };
+
+// Coerce/validate a possibly-malformed rule into the canonical shape.
+function normalizeRecurrenceRule(rule) {
+  if (!rule || typeof rule !== 'object') return null;
+  const interval = Math.max(1, Math.floor(Number(rule.interval) || 1));
+  const unit = ['days','weeks','months','years'].includes(rule.unit) ? rule.unit : 'days';
+  const byDays = Array.isArray(rule.byDays)
+    ? rule.byDays.filter(d => WEEKDAY_KEYS.includes(d))
+    : [];
+  const endType = ['never','on','count'].includes(rule.endType) ? rule.endType : 'never';
+  const endDate = endType === 'on' && typeof rule.endDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(rule.endDate) ? rule.endDate : null;
+  const endCount = endType === 'count' ? Math.max(1, Math.floor(Number(rule.endCount) || 1)) : null;
+  return { interval, unit, byDays: unit === 'weeks' ? byDays : [], endType, endDate, endCount };
+}
+
+function recurrenceLabel(value, rule) {
+  if (value !== 'custom') {
+    const found = RECURRENCE_OPTIONS.find(o => o.value === value);
+    return found && value !== 'custom' ? found.label : '';
+  }
+  const r = normalizeRecurrenceRule(rule);
+  if (!r) return 'Custom';
+  const unitWord = r.interval === 1
+    ? { days: 'day', weeks: 'week', months: 'month', years: 'year' }[r.unit]
+    : r.unit;
+  let label = r.interval === 1 ? `Every ${unitWord}` : `Every ${r.interval} ${unitWord}`;
+  if (r.unit === 'weeks' && r.byDays.length) {
+    const days = r.byDays
+      .slice()
+      .sort((a, b) => WEEKDAY_KEYS.indexOf(a) - WEEKDAY_KEYS.indexOf(b))
+      .map(d => WEEKDAY_NAMES_SHORT[d])
+      .join(', ');
+    label += ` on ${days}`;
+  }
+  if (r.endType === 'on' && r.endDate)        label += ` until ${r.endDate}`;
+  else if (r.endType === 'count' && r.endCount) label += ` (${r.endCount} left)`;
+  return label;
 }
 
 function _pad2(n) { return String(n).padStart(2, '0'); }
@@ -111,10 +148,14 @@ function _addMonthsClamp(date, count) {
 }
 
 // Given a task that just completed, compute the next instance's dueDate + time.
-// Returns null if recurrence === 'none' or unknown.
+// Returns null if recurrence === 'none', the chain has ended (custom + endType cutoff),
+// or unknown.
+// For custom recurrence, returns { dueDate, time, ruleUpdate } where ruleUpdate is the
+// rule to attach to the spawned instance (e.g. endCount decremented). For presets the
+// return is { dueDate, time, ruleUpdate: null }.
 // Anchored to max(today, originalDueDate) so a late-completed task doesn't fire
 // catch-up reminders for missed days.
-function nextDueDateForRecurrence(currentDueDate, currentTime, recurrence) {
+function nextDueDateForRecurrence(currentDueDate, currentTime, recurrence, rule) {
   if (!recurrence || recurrence === 'none') return null;
 
   const today = new Date(); today.setHours(0, 0, 0, 0);
@@ -153,10 +194,65 @@ function nextDueDateForRecurrence(currentDueDate, currentTime, recurrence) {
     case 'quarterly':    _addMonthsClamp(next, 3);  break;
     case 'biannually':   _addMonthsClamp(next, 6);  break;
     case 'yearly':       next.setFullYear(next.getFullYear() + 1); break;
+    case 'custom': {
+      const r = normalizeRecurrenceRule(rule);
+      if (!r) return null;
+      const advance = _advanceCustom(next, r);
+      if (!advance) return null;
+      // End conditions
+      if (r.endType === 'on' && r.endDate) {
+        const endMs = parseDate(r.endDate)?.getTime() ?? null;
+        if (endMs !== null && advance.getTime() > endMs) return null;
+      }
+      let ruleUpdate = r;
+      if (r.endType === 'count') {
+        // r.endCount is the number of REMAINING occurrences including the one
+        // that just completed. So the spawned instance gets endCount - 1.
+        // When that hits 0 we stop the chain.
+        const remaining = (r.endCount || 0) - 1;
+        if (remaining < 1) return null;
+        ruleUpdate = { ...r, endCount: remaining };
+      }
+      return { dueDate: _fmtDateISO(advance), time: nextTime, ruleUpdate };
+    }
     default: return null;
   }
 
-  return { dueDate: _fmtDateISO(next), time: nextTime };
+  return { dueDate: _fmtDateISO(next), time: nextTime, ruleUpdate: null };
+}
+
+// Advance `next` by one custom-rule step. For weeks with byDays, walks to the
+// next matching weekday within the interval. Mutates next? No — returns a new
+// Date so caller's anchor stays clean.
+function _advanceCustom(start, rule) {
+  const d = new Date(start.getTime());
+  if (rule.unit === 'days')  { d.setDate(d.getDate() + rule.interval); return d; }
+  if (rule.unit === 'months') { _addMonthsClamp(d, rule.interval); return d; }
+  if (rule.unit === 'years')  { d.setFullYear(d.getFullYear() + rule.interval); return d; }
+  if (rule.unit === 'weeks') {
+    if (!rule.byDays.length) {
+      d.setDate(d.getDate() + 7 * rule.interval);
+      return d;
+    }
+    // With byDays: find the next matching weekday. If there's a remaining
+    // matching day in the current week, jump to it. Else jump `interval` weeks
+    // forward to the earliest matching day in that target week.
+    const wanted = rule.byDays.map(k => WEEKDAY_KEYS.indexOf(k)).filter(i => i >= 0);
+    if (!wanted.length) { d.setDate(d.getDate() + 7 * rule.interval); return d; }
+    const startDow = d.getDay();
+    const sameWeek = wanted.filter(i => i > startDow).sort((a,b)=>a-b)[0];
+    if (sameWeek !== undefined) {
+      d.setDate(d.getDate() + (sameWeek - startDow));
+      return d;
+    }
+    // Move to the start (Sun) of the target week N intervals away, then to the earliest wanted day
+    const daysToSunday = (7 - startDow) % 7 || 7; // next Sunday (skip same week's Sunday)
+    d.setDate(d.getDate() + daysToSunday + 7 * (rule.interval - 1));
+    const earliest = wanted.slice().sort((a,b)=>a-b)[0];
+    d.setDate(d.getDate() + earliest);
+    return d;
+  }
+  return null;
 }
 
 // ── Subtask + notes helpers ──────────────────────────────────────────────────
@@ -231,6 +327,77 @@ function readSubtasksFromForm(containerEl) {
     text: row.querySelector('.subtask-edit-text').value.trim(),
     done: row.querySelector('.subtask-edit-check').checked
   })).filter(s => s.text.length > 0);
+}
+
+// ── Custom recurrence rule builder ───────────────────────────────────────────
+
+// HTML for the inline Custom rule builder. Shown/hidden by toggling a class
+// on the wrapper based on the parent <select> value. idPrefix isolates IDs
+// when multiple forms (e.g. add + edit) exist on the page.
+function customRuleFormHTML(rule, idPrefix) {
+  const r = normalizeRecurrenceRule(rule) || {
+    interval: 1, unit: 'days', byDays: [], endType: 'never', endDate: null, endCount: null
+  };
+  const unitOpts = ['days','weeks','months','years']
+    .map(u => `<option value="${u}" ${r.unit === u ? 'selected' : ''}>${u}</option>`)
+    .join('');
+  const dayPills = WEEKDAY_KEYS.map(k => `
+    <button type="button" class="custom-recur-daypill ${r.byDays.includes(k) ? 'is-on' : ''}" data-day="${k}">
+      ${WEEKDAY_NAMES_SHORT[k][0]}
+    </button>
+  `).join('');
+  return `
+    <div id="${idPrefix}-custom-recur" class="custom-recur-block" data-prefix="${idPrefix}">
+      <div class="custom-recur-row">
+        <span>Every</span>
+        <input type="number" min="1" max="999" id="${idPrefix}-custom-interval"
+          class="custom-recur-interval" value="${r.interval}"/>
+        <select id="${idPrefix}-custom-unit" class="custom-recur-unit">${unitOpts}</select>
+      </div>
+
+      <div class="custom-recur-bydays ${r.unit === 'weeks' ? '' : 'is-hidden'}" id="${idPrefix}-custom-bydays-wrap">
+        <label class="add-task-field-label">On these days (optional)</label>
+        <div class="custom-recur-daypills">${dayPills}</div>
+      </div>
+
+      <label class="add-task-field-label">End repeat</label>
+      <div class="custom-recur-end">
+        <label class="custom-recur-endopt">
+          <input type="radio" name="${idPrefix}-custom-end" value="never" ${r.endType === 'never' ? 'checked' : ''}/>
+          <span>Never</span>
+        </label>
+        <label class="custom-recur-endopt">
+          <input type="radio" name="${idPrefix}-custom-end" value="on" ${r.endType === 'on' ? 'checked' : ''}/>
+          <span>On date</span>
+          <input type="date" id="${idPrefix}-custom-enddate" class="custom-recur-enddate"
+            value="${r.endDate || ''}" ${r.endType === 'on' ? '' : 'disabled'}/>
+        </label>
+        <label class="custom-recur-endopt">
+          <input type="radio" name="${idPrefix}-custom-end" value="count" ${r.endType === 'count' ? 'checked' : ''}/>
+          <span>After</span>
+          <input type="number" min="1" max="999" id="${idPrefix}-custom-endcount" class="custom-recur-endcount"
+            value="${r.endCount || ''}" ${r.endType === 'count' ? '' : 'disabled'}/>
+          <span>times</span>
+        </label>
+      </div>
+    </div>
+  `;
+}
+
+// Read the custom rule back out of a form. Returns null if any required field
+// is missing/invalid so the caller can fall back gracefully.
+function readCustomRuleFromForm(idPrefix) {
+  const wrap = document.getElementById(`${idPrefix}-custom-recur`);
+  if (!wrap) return null;
+  const interval = Number(document.getElementById(`${idPrefix}-custom-interval`)?.value || 1);
+  const unit     = document.getElementById(`${idPrefix}-custom-unit`)?.value || 'days';
+  const byDays   = unit === 'weeks'
+    ? Array.from(wrap.querySelectorAll('.custom-recur-daypill.is-on')).map(b => b.dataset.day)
+    : [];
+  const endType  = wrap.querySelector(`input[name="${idPrefix}-custom-end"]:checked`)?.value || 'never';
+  const endDate  = endType === 'on'    ? (document.getElementById(`${idPrefix}-custom-enddate`)?.value || null) : null;
+  const endCount = endType === 'count' ? Number(document.getElementById(`${idPrefix}-custom-endcount`)?.value || 1) : null;
+  return normalizeRecurrenceRule({ interval, unit, byDays, endType, endDate, endCount });
 }
 
 // Build a new subtask-edit-row DOM node (used when user clicks + Add or after AI break-down).
@@ -383,7 +550,7 @@ function taskCardHTML(task, nameMap = {}, opts = {}) {
   const metaParts   = [displayName, dateTime].filter(Boolean);
 
   const createdLabel = formatCreatedAt(task.createdAt);
-  const recurLabel   = recurrenceLabel(task.recurrence);
+  const recurLabel   = recurrenceLabel(task.recurrence, task.recurrence_rule);
   const urgentMark   = task.priority === 'urgent' ? '<span class="task-urgent-mark" title="Urgent">!</span>' : '';
   const progress     = subtaskProgress(task);
   const progressBadge = progress ? `<span class="subtask-progress">${progress.done}/${progress.total}</span>` : '';

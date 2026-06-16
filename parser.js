@@ -55,6 +55,19 @@ RECURRENCE — set "recurrence" based on speech cues:
 - "hourly", "every hour" → "hourly"
 - NO recurrence cue → "none"
 
+CUSTOM RECURRENCE — if the user says a pattern that DOESN'T fit any preset above, use recurrence="custom" and include a "recurrence_rule" object:
+- "every 3 days" / "every 5 days" → recurrence="custom", recurrence_rule={interval:N, unit:"days"}
+- "every 2 weeks" already maps to fortnightly; "every 4 weeks" / "every 6 weeks" → recurrence="custom", recurrence_rule={interval:N, unit:"weeks"}
+- "every 4 months" / "every 8 months" → recurrence="custom", recurrence_rule={interval:N, unit:"months"}
+- "every 2 years" / "every 5 years" → recurrence="custom", recurrence_rule={interval:N, unit:"years"}
+- "every Monday and Thursday" → recurrence="custom", recurrence_rule={interval:1, unit:"weeks", byDays:["mon","thu"]}
+- "every other Tuesday" → recurrence="custom", recurrence_rule={interval:2, unit:"weeks", byDays:["tue"]}
+- "every weekday until end of month" → recurrence="weekdays" (preset) plus end-date is fine, but if you need a true end add recurrence_rule={endType:"on", endDate:"YYYY-MM-DD"} alongside
+- "every Monday for the next 5 weeks" → recurrence="custom", recurrence_rule={interval:1, unit:"weeks", byDays:["mon"], endType:"count", endCount:5}
+- "every day until December 31" → recurrence="custom", recurrence_rule={interval:1, unit:"days", endType:"on", endDate:"<resolved YYYY-MM-DD>"}
+recurrence_rule shape: {interval:integer≥1, unit:"days"|"weeks"|"months"|"years", byDays?:["mon","tue","wed","thu","fri","sat","sun"], endType?:"never"|"on"|"count", endDate?:"YYYY-MM-DD", endCount?:integer≥1}
+ONLY include "recurrence_rule" when recurrence="custom". Otherwise omit it.
+
 Do NOT confuse a one-off deadline with recurrence:
 - "by Monday" / "by Friday" → deadline, recurrence="none"
 - "this Tuesday at 5pm" / "tomorrow morning" → one-off, recurrence="none"
@@ -89,13 +102,14 @@ For each task return:
 - "time": extract time in HH:MM (24-hour). Use ${currentTime} if no time mentioned.
   * "3pm" = "15:00", "9am" = "09:00", "noon" = "12:00"
   * "morning" = "09:00", "afternoon" = "14:00", "evening" = "18:00"
-- "recurrence": one of "none", "hourly", "daily", "weekdays", "weekends", "weekly", "fortnightly", "monthly", "quarterly", "biannually", "yearly". See RECURRENCE rules above. Default "none".
+- "recurrence": one of "none", "hourly", "daily", "weekdays", "weekends", "weekly", "fortnightly", "monthly", "quarterly", "biannually", "yearly", "custom". See RECURRENCE + CUSTOM RECURRENCE rules above. Default "none".
+- "recurrence_rule": ONLY when recurrence="custom". See CUSTOM RECURRENCE shape above.
 - "priority": "urgent" or "normal". See PRIORITY rules above. Default "normal".
 - "notes": extra context (see NOTES rules above). Default "".
 - "subtasks": array of short strings (see SUBTASKS rules above). Default [].
 
 Return a JSON object:
-{"tasks": [{"description": "string", "assignee": "string", "dueDate": "YYYY-MM-DD", "time": "HH:MM", "recurrence": "string", "priority": "string", "notes": "string", "subtasks": ["string", ...]}]}
+{"tasks": [{"description": "string", "assignee": "string", "dueDate": "YYYY-MM-DD", "time": "HH:MM", "recurrence": "string", "recurrence_rule": object|null, "priority": "string", "notes": "string", "subtasks": ["string", ...]}]}
 
 If no task found:
 {"tasks": [], "error": "Could not understand the task. Please speak again."}`;
@@ -144,7 +158,7 @@ If no task found:
     const myId       = Auth.profile?.id ?? null;
     const myName     = Auth.profile?.full_name ?? 'Me';
     const selfRefs   = ['me', 'myself', 'i', 'self'];
-    const validRecur = ['none','hourly','daily','weekdays','weekends','weekly','fortnightly','monthly','quarterly','biannually','yearly'];
+    const validRecur = ['none','hourly','daily','weekdays','weekends','weekly','fortnightly','monthly','quarterly','biannually','yearly','custom'];
 
     for (const t of tasks) {
       if (!t.description || !t.assignee) continue;
@@ -152,6 +166,9 @@ If no task found:
       const assigneeRaw = t.assignee.trim();
       const isSelf = selfRefs.includes(assigneeRaw.toLowerCase());
       const recurrence = validRecur.includes(t.recurrence) ? t.recurrence : 'none';
+      const recurrence_rule = recurrence === 'custom' && t.recurrence_rule
+        ? normalizeRecurrenceRule(t.recurrence_rule)
+        : null;
       const priority   = t.priority === 'urgent' ? 'urgent' : 'normal';
       const notes      = typeof t.notes === 'string' ? t.notes.trim() : '';
       const subtasks   = Array.isArray(t.subtasks)
@@ -173,6 +190,7 @@ If no task found:
           time:        t.time    || currentTime,
           status:      'pending',
           recurrence,
+          recurrence_rule,
           priority,
           notes,
           subtasks,
@@ -200,6 +218,7 @@ If no task found:
         time:        t.time    || currentTime,
         status:      'pending',
         recurrence,
+        recurrence_rule,
         priority,
         notes,
         subtasks,
@@ -230,19 +249,26 @@ Extract every task mentioned. For each:
   - "today"=${todayISO}, "tomorrow"=next day, "this/next [weekday]", "end of week"=Friday.
 - "time": HH:MM 24-hour. Use ${currentTime} if no time.
   - "3pm"=15:00, "noon"=12:00, "morning"=09:00, "afternoon"=14:00, "evening"=18:00.
-- "recurrence": one of "none","hourly","daily","weekdays","weekends","weekly","fortnightly","monthly","quarterly","biannually","yearly". Detection cues:
+- "recurrence": one of "none","hourly","daily","weekdays","weekends","weekly","fortnightly","monthly","quarterly","biannually","yearly","custom". Detection cues:
   - "every day"/"daily"→daily, "every weekday"→weekdays, "every weekend"→weekends, "weekly"/"every Monday/Tuesday/etc"→weekly,
   - "fortnightly"/"biweekly"/"every two weeks"→fortnightly, "monthly"/"every month"→monthly,
   - "quarterly"/"every 3 months"→quarterly, "every 6 months"/"semi-annually"→biannually,
   - "yearly"/"annually"→yearly, "hourly"/"every hour"→hourly.
   - "by Friday"/"this Tuesday"/"tomorrow" are one-off deadlines → recurrence="none".
   - Default "none" when no clear recurring cue.
+- "recurrence_rule": ONLY when recurrence="custom". For patterns that DON'T fit any preset:
+  - "every N days/weeks/months/years" with N not matching a preset → {interval:N, unit:"days|weeks|months|years"}
+  - "every Mon and Thu" → {interval:1, unit:"weeks", byDays:["mon","thu"]}
+  - "every other Tue" → {interval:2, unit:"weeks", byDays:["tue"]}
+  - "for the next 5 weeks/times" → add endType:"count", endCount:5
+  - "until 2026-12-31" → add endType:"on", endDate:"YYYY-MM-DD"
+  Omit "recurrence_rule" entirely (or set null) when recurrence ≠ "custom".
 - "priority": "urgent" if speech contains "urgent","ASAP","important","high/top priority","critical","right away","immediately"; else "normal".
 - "notes": extra context not needed in the title (amounts, addresses, IDs, agenda items, links). Empty string if none.
 - "subtasks": only if user enumerates steps ("with steps", "first X then Y then Z"). Otherwise empty array.
 
 JSON only:
-{"tasks":[{"description":"...","dueDate":"YYYY-MM-DD","time":"HH:MM","recurrence":"...","priority":"...","notes":"...","subtasks":[]}]}
+{"tasks":[{"description":"...","dueDate":"YYYY-MM-DD","time":"HH:MM","recurrence":"...","recurrence_rule":object|null,"priority":"...","notes":"...","subtasks":[]}]}
 
 If nothing usable: {"tasks":[],"error":"Could not understand. Please speak again."}`;
 
@@ -281,28 +307,35 @@ If nothing usable: {"tasks":[],"error":"Could not understand. Please speak again
     if (!tasks.length) throw new Error('Could not understand the task. Please speak again.');
 
     const createdAt = new Date().toISOString();
-    const validRecur = ['none','hourly','daily','weekdays','weekends','weekly','fortnightly','monthly','quarterly','biannually','yearly'];
-    return tasks.map(t => ({
-      id:          crypto.randomUUID(),
-      raw:         transcript,
-      description: t.description.trim(),
-      assignee:    '',
-      assignee_id: null,
-      assigner_id: null,
-      added_by:    null,
-      dueDate:     t.dueDate  || todayISO,
-      time:        t.time     || currentTime,
-      status:      'pending',
-      recurrence:  validRecur.includes(t.recurrence) ? t.recurrence : 'none',
-      priority:    t.priority === 'urgent' ? 'urgent' : 'normal',
-      notes:       typeof t.notes === 'string' ? t.notes.trim() : '',
-      subtasks:    Array.isArray(t.subtasks)
-        ? t.subtasks.map(s => String(s).trim()).filter(Boolean).slice(0, 10)
-            .map(text => ({ id: crypto.randomUUID(), text, done: false }))
-        : [],
-      createdAt,
-      updatedAt:   createdAt
-    }));
+    const validRecur = ['none','hourly','daily','weekdays','weekends','weekly','fortnightly','monthly','quarterly','biannually','yearly','custom'];
+    return tasks.map(t => {
+      const recurrence = validRecur.includes(t.recurrence) ? t.recurrence : 'none';
+      const recurrence_rule = recurrence === 'custom' && t.recurrence_rule
+        ? normalizeRecurrenceRule(t.recurrence_rule)
+        : null;
+      return {
+        id:              crypto.randomUUID(),
+        raw:             transcript,
+        description:     t.description.trim(),
+        assignee:        '',
+        assignee_id:     null,
+        assigner_id:     null,
+        added_by:        null,
+        dueDate:         t.dueDate  || todayISO,
+        time:            t.time     || currentTime,
+        status:          'pending',
+        recurrence,
+        recurrence_rule,
+        priority:        t.priority === 'urgent' ? 'urgent' : 'normal',
+        notes:           typeof t.notes === 'string' ? t.notes.trim() : '',
+        subtasks:        Array.isArray(t.subtasks)
+          ? t.subtasks.map(s => String(s).trim()).filter(Boolean).slice(0, 10)
+              .map(text => ({ id: crypto.randomUUID(), text, done: false }))
+          : [],
+        createdAt,
+        updatedAt:       createdAt
+      };
+    });
   },
 
   // Ask Groq to break a task description into 3-6 concrete subtasks.

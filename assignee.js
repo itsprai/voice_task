@@ -101,7 +101,7 @@ function assigneeCardHTML(task, computedStatus, editingTaskId) {
   ` : '';
 
   const createdLabel = formatCreatedAt(task.createdAt);
-  const recurLabel   = recurrenceLabel(task.recurrence);
+  const recurLabel   = recurrenceLabel(task.recurrence, task.recurrence_rule);
   const urgentMark   = task.priority === 'urgent' ? '<span class="task-urgent-mark" title="Urgent">!</span>' : '';
   const progress     = subtaskProgress(task);
   const progressBadge = progress ? `<span class="subtask-progress">${progress.done}/${progress.total}</span>` : '';
@@ -169,7 +169,8 @@ function renderAssigneeAddTaskForm(assigners, activeAssignerId) {
       <label class="add-task-field-label" for="add-assignee-task-time">Time</label>
       <input type="time" id="add-assignee-task-time" class="add-task-date"/>
       <label class="add-task-field-label" for="add-assignee-task-recurrence">Repeat</label>
-      <select id="add-assignee-task-recurrence" class="add-task-input add-task-select">${recurOpts}</select>
+      <select id="add-assignee-task-recurrence" class="add-task-input add-task-select" data-custom-wrap="add-assignee-task-custom-recur">${recurOpts}</select>
+      <div class="custom-recur-wrap is-hidden" id="add-assignee-task-custom-recur-wrap">${customRuleFormHTML(null, 'add-assignee-task')}</div>
       <label class="add-task-urgent-row">
         <input type="checkbox" id="add-assignee-task-urgent"/>
         <span>Mark as urgent</span>
