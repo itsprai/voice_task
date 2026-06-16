@@ -1365,9 +1365,11 @@ const App = {
         const dueAt    = date && time ? new Date(`${date}T${time}`).getTime() : null;
         const urgentEl = form.querySelector('.pipeline-edit-urgent');
         const priority = urgentEl?.checked ? 'urgent' : 'normal';
+        const recurrence      = form.querySelector(`#edit-${id}-recurrence`)?.value || 'none';
+        const recurrence_rule = recurrence === 'custom' ? readCustomRuleFromForm(`edit-${id}`) : null;
         const notes    = form.querySelector(`#edit-${id}-notes`)?.value.trim() || '';
         const subtasks = readSubtasksFromForm(form.querySelector(`#edit-${id}-subtasks`));
-        this.state.tasks = Storage.update(id, { description: desc, dueDate: date || null, time: time || null, dueAt, priority, notes, subtasks });
+        this.state.tasks = Storage.update(id, { description: desc, dueDate: date || null, time: time || null, dueAt, priority, recurrence, recurrence_rule, notes, subtasks });
         Sync.push(this.state.tasks);
         Notifications.cancelLocal(id);
         const updated = this.state.tasks.find(t => t.id === id);
@@ -1525,9 +1527,11 @@ const App = {
         const dueAt    = date && time ? new Date(`${date}T${time}`).getTime() : null;
         const urgentEl = form.querySelector('.pipeline-edit-urgent');
         const priority = urgentEl?.checked ? 'urgent' : 'normal';
+        const recurrence      = form.querySelector(`#edit-${id}-recurrence`)?.value || 'none';
+        const recurrence_rule = recurrence === 'custom' ? readCustomRuleFromForm(`edit-${id}`) : null;
         const notes    = form.querySelector(`#edit-${id}-notes`)?.value.trim() || '';
         const subtasks = readSubtasksFromForm(form.querySelector(`#edit-${id}-subtasks`));
-        this.state.tasks = Storage.update(id, { description: desc, dueDate: date || null, time: time || null, dueAt, priority, notes, subtasks });
+        this.state.tasks = Storage.update(id, { description: desc, dueDate: date || null, time: time || null, dueAt, priority, recurrence, recurrence_rule, notes, subtasks });
         Sync.push(this.state.tasks);
         this.state.editingAssigneeTaskId = null;
         renderAssigneeTasksPage(this.state.tasks, this.state.assigners, null);

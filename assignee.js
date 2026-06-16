@@ -81,6 +81,9 @@ function assigneeCardHTML(task, computedStatus, editingTaskId) {
   const isEditing   = editingTaskId === task.id;
   const selfAdded   = task.added_by === Auth.profile?.id && task.added_by === task.assignee_id;
 
+  const editRecurOpts = RECURRENCE_OPTIONS.map(o =>
+    `<option value="${o.value}" ${task.recurrence === o.value ? 'selected' : ''}>${escapeHTML(o.label)}</option>`
+  ).join('');
   const editFormHTML = isEditing ? `
     <div class="pipeline-edit-form">
       <input type="text"  class="pipeline-edit-desc" value="${escapeHTML(task.description)}"/>
@@ -88,6 +91,9 @@ function assigneeCardHTML(task, computedStatus, editingTaskId) {
         <input type="date" class="pipeline-edit-date" value="${task.dueDate || ''}"/>
         <input type="time" class="pipeline-edit-time" value="${task.time || ''}"/>
       </div>
+      <label class="add-task-field-label" for="edit-${task.id}-recurrence">Repeat</label>
+      <select id="edit-${task.id}-recurrence" class="add-task-input add-task-select pipeline-edit-recurrence" data-custom-wrap="edit-${task.id}-custom-recur">${editRecurOpts}</select>
+      <div class="custom-recur-wrap ${task.recurrence === 'custom' ? '' : 'is-hidden'}" id="edit-${task.id}-custom-recur-wrap">${customRuleFormHTML(task.recurrence_rule, `edit-${task.id}`)}</div>
       <label class="pipeline-edit-urgent-row">
         <input type="checkbox" class="pipeline-edit-urgent" ${task.priority === 'urgent' ? 'checked' : ''}/>
         Mark as urgent
