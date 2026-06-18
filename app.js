@@ -132,39 +132,10 @@ const App = {
         return;
       }
 
-      // Home page — tap bullet checkbox to mark complete
-      const homeCheck = e.target.closest('.home-bullet-check');
-      if (homeCheck) {
-        e.preventDefault();
-        const task = this.state.tasks.find(t => t.id === homeCheck.dataset.id);
-        if (!task) return;
-        const next = task.status === 'completed' ? 'pending' : 'completed';
-        this.state.tasks = Storage.update(task.id, { status: next });
-        if (next === 'completed') {
-          Notifications.cancelLocal(task.id);
-          this._maybeGenerateNextRecurrence(task);
-        } else {
-          Notifications.scheduleLocal({ ...task, status: 'pending' });
-        }
-        renderHomePage(this.state.tasks, this.state.nameMap);
-        return;
-      }
-
-      // Home page — tap bullet body to open the task on the Team page
-      const homeBody = e.target.closest('.home-bullet-body');
-      if (homeBody) {
-        const task = this.state.tasks.find(t => t.id === homeBody.dataset.id);
-        if (!task) return;
-        const myId = Auth.profile?.id;
-        const personId = task.assignee_id || myId;
-        this.navigateTo('pipeline', { personId, keepState: true });
-        return;
-      }
-
-      // Home page — tap a person header → jump to that person on Team page
-      const homePerson = e.target.closest('.home-person-header[data-person-id]');
-      if (homePerson) {
-        this.navigateTo('pipeline', { personId: homePerson.dataset.personId, keepState: true });
+      // Home page — "Show all" on a person block → jump to that person on Team page
+      const showAll = e.target.closest('.home-person-showall[data-person-id]');
+      if (showAll) {
+        this.navigateTo('pipeline', { personId: showAll.dataset.personId, keepState: true });
         return;
       }
     });
@@ -1765,6 +1736,7 @@ const App = {
         todayCount:   data?.todayCount ?? 0,
         overdueCount: data?.overdueCount ?? 0,
         urgentCount:  data?.urgentCount ?? 0,
+        perPerson:    Array.isArray(data?.perPerson) ? data.perPerson : [],
         generatedAt:  data?.generatedAt || new Date().toISOString(),
         loading:      false
       };
@@ -1782,18 +1754,13 @@ const App = {
     this._paintHomeDigest();
   },
 
-  // Re-render only the digest card without re-rendering the rest of Home
+  // Re-render the digest card AND the per-person blocks. Called after
+  // _refreshHomeDigest resolves so the LLM-generated summaries appear inline.
   _paintHomeDigest() {
     if (this.state.currentPage !== 'home') return;
-    const el = document.getElementById('home-digest');
-    if (!el) return;
-    const myId = Auth.profile?.id;
-    const teamOnly = this.state.tasks.filter(t => !isPersonalTask(t, myId));
-    const counts = {
-      pendingCount: teamOnly.filter(t => ['pending', 'future'].includes(getComputedStatus(t))).length,
-      overdueCount: teamOnly.filter(t => getComputedStatus(t) === 'overdue').length
-    };
-    el.innerHTML = renderDigestCard(this.state.homeDigest, counts);
+    // The full re-render is needed because perPerson summaries now live on
+    // App.state.homeDigest.perPerson and feed into homePersonBlock(...).
+    renderHomePage(this.state.tasks, this.state.nameMap);
   },
 
   _renderPipeline() {

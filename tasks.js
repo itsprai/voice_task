@@ -445,7 +445,6 @@ function escapeHTML(str) {
 // ── Home page renderer (assigner: summary chips + today's tasks) ──────────────
 
 function renderHomePage(tasks, nameMap = {}) {
-  const digestEl = document.getElementById('home-digest');
   const chipsEl  = document.getElementById('home-chips');
   const listEl   = document.getElementById('home-tasks');
   const dateEl   = document.getElementById('home-date');
@@ -470,138 +469,106 @@ function renderHomePage(tasks, nameMap = {}) {
     <span class="stat-chip"><span class="stat-chip-dot stat-chip-dot--overdue"></span>Overdue ${overdueCount}</span>
   `;
 
-  // AI digest card — populated asynchronously by App._refreshHomeDigest()
-  if (digestEl) {
-    const cache = (typeof App !== 'undefined' ? App.state.homeDigest : null);
-    digestEl.innerHTML = renderDigestCard(cache, { pendingCount, overdueCount });
-  }
-
-  // Today's highlights — overdue + today, grouped by assignee.
-  // Personal tasks (assigner=me, assignee=me) are folded into a "Me" group.
-  const relevant = teamOnly.filter(t => {
+  // Today's highlights — per-person summary cards. The AI summaries live on
+  // App.state.homeDigest.perPerson (populated by _refreshHomeDigest). We still
+  // compute counts locally so the chip line is always accurate even before the
+  // LLM call finishes (or if it fails).
+  const relevant = tasks.filter(t => {
+    // Only tasks this manager assigned (includes their own personal tasks)
+    if (t.assigner_id !== myId) return false;
     const s = getComputedStatus(t);
     if (s === 'overdue') return true;
     if (s === 'pending' && formatDate(t.dueDate) === 'Today') return true;
     return false;
   });
 
-  // Also include personal tasks the manager has assigned to themselves for today/overdue
-  const personalRelevant = tasks.filter(t => {
-    if (!isPersonalTask(t, myId)) return false;
-    const s = getComputedStatus(t);
-    if (s === 'overdue') return true;
-    if (s === 'pending' && formatDate(t.dueDate) === 'Today') return true;
-    return false;
-  });
-
-  const allRelevant = [...relevant, ...personalRelevant];
-
-  if (!allRelevant.length) {
+  if (!relevant.length) {
     listEl.innerHTML = `<div class="empty-section">Nothing on deck today — tap the mic to assign one</div>`;
     return;
   }
 
-  // Group by assignee. Personal tasks share the "Me" group keyed by myId.
+  // Local count by assignee
   const byPerson = new Map();
-  for (const t of allRelevant) {
-    const key = t.assignee_id || 'unassigned';
-    if (!byPerson.has(key)) byPerson.set(key, []);
-    byPerson.get(key).push(t);
+  for (const t of relevant) {
+    const key = t.assignee_id || myId;
+    if (!byPerson.has(key)) byPerson.set(key, { today: 0, overdue: 0, urgent: 0, total: 0 });
+    const b = byPerson.get(key);
+    b.total++;
+    const s = getComputedStatus(t);
+    if (s === 'overdue') b.overdue++;
+    if (s === 'pending' && formatDate(t.dueDate) === 'Today') b.today++;
+    if (t.priority === 'urgent' && s === 'pending' && formatDate(t.dueDate) === 'Today') b.urgent++;
   }
 
-  // Sort each person's tasks (overdue → urgent → time) and the persons themselves
-  // (most-pressing first: overdue count desc, then urgent count desc, then total desc).
-  const personEntries = Array.from(byPerson.entries()).map(([id, list]) => {
-    const sorted = sortHomeBullets(list);
-    const overdueCount = list.filter(t => getComputedStatus(t) === 'overdue').length;
-    const urgentCount  = list.filter(t => t.priority === 'urgent').length;
-    return { id, list: sorted, overdueCount, urgentCount, total: list.length };
-  }).sort((a, b) => {
-    if (a.overdueCount !== b.overdueCount) return b.overdueCount - a.overdueCount;
-    if (a.urgentCount  !== b.urgentCount)  return b.urgentCount  - a.urgentCount;
-    return b.total - a.total;
+  // Map server-side summaries (if any) by id for quick lookup
+  const aiSummaries = (typeof App !== 'undefined' && App.state.homeDigest?.perPerson)
+    ? Object.fromEntries(App.state.homeDigest.perPerson.map(p => [p.id, p.summary]))
+    : {};
+
+  // Sort people: most pressing first (overdue desc, urgent desc, total desc)
+  const personEntries = Array.from(byPerson.entries()).map(([id, counts]) => ({
+    id,
+    name: id === myId ? 'Me' : (nameMap[id] || 'Unknown'),
+    counts,
+    summary: aiSummaries[id] || ''
+  })).sort((a, b) => {
+    if (a.counts.overdue !== b.counts.overdue) return b.counts.overdue - a.counts.overdue;
+    if (a.counts.urgent  !== b.counts.urgent)  return b.counts.urgent  - a.counts.urgent;
+    return b.counts.total - a.counts.total;
   });
 
+  // Has the LLM call resolved yet? (`generatedAt` is only set after a successful fetch)
+  const digestReady = !!(typeof App !== 'undefined' && App.state.homeDigest?.generatedAt);
+  const ageLine = digestReady
+    ? `<span class="home-highlights-age">${escapeHTML(formatRelativeAge(App.state.homeDigest.generatedAt))}</span>`
+    : '';
+
   listEl.innerHTML = `
-    <div class="home-highlights-heading">Today's highlights</div>
+    <div class="home-highlights-bar">
+      <span class="home-highlights-heading">Today's highlights</span>
+      <span class="home-highlights-actions">
+        ${ageLine}
+        <button id="home-digest-refresh" class="home-highlights-refresh" type="button" aria-label="Refresh insights">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="12" height="12">
+            <polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/>
+            <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+          </svg>
+        </button>
+      </span>
+    </div>
     <div class="home-highlights">
-      ${personEntries.map(p => homePersonBlock(p, nameMap, myId)).join('')}
+      ${personEntries.map(p => homePersonBlock(p, myId)).join('')}
     </div>
   `;
 }
 
-// Sort a person's bullet list: overdue → urgent → time
-function sortHomeBullets(list) {
-  return [...list].sort((a, b) => {
-    const aOver = getComputedStatus(a) === 'overdue' ? 1 : 0;
-    const bOver = getComputedStatus(b) === 'overdue' ? 1 : 0;
-    if (aOver !== bOver) return bOver - aOver;
-    const aUrg = a.priority === 'urgent' ? 1 : 0;
-    const bUrg = b.priority === 'urgent' ? 1 : 0;
-    if (aUrg !== bUrg) return bUrg - aUrg;
-    return (a.dueAt ?? Number.MAX_SAFE_INTEGER) - (b.dueAt ?? Number.MAX_SAFE_INTEGER);
-  });
-}
-
-// Render one assignee group: header + bullet list
-function homePersonBlock(person, nameMap, myId) {
+// Render one person's summary card: name + count parts + AI summary + Show all
+function homePersonBlock(person, myId) {
   const isMe = person.id === myId;
-  const name = isMe ? 'Me' : (nameMap[person.id] || 'Unknown');
-  const headerArrow = isMe
-    ? ''  // personal — no separate page to navigate to
-    : `<span class="home-person-arrow" aria-hidden="true">→</span>`;
-  const headerAttrs = isMe ? '' : `data-person-id="${person.id}"`;
+  const showAllAttrs = isMe ? '' : `data-person-id="${person.id}"`;
+
+  const countParts = [];
+  if (person.counts.today)   countParts.push(`${person.counts.today} today`);
+  if (person.counts.overdue) countParts.push(`<span class="home-person-overdue">${person.counts.overdue} overdue</span>`);
+  if (person.counts.urgent)  countParts.push(`<span class="home-person-urgent">${person.counts.urgent} urgent</span>`);
+  const countLine = countParts.join(' · ');
+
+  const body = person.summary
+    ? `<p class="home-person-summary">${escapeHTML(person.summary)}</p>`
+    : `<p class="home-person-summary home-person-summary--loading">Reading the day…</p>`;
 
   return `
     <div class="home-person-block">
-      <button class="home-person-header" ${headerAttrs} type="button">
-        <span class="home-person-name">${escapeHTML(name)}</span>
-        <span class="home-person-count">${person.total}</span>
-        ${headerArrow}
-      </button>
-      <div class="home-person-bullets">
-        ${person.list.map(t => homeBulletHTML(t)).join('')}
+      <div class="home-person-row">
+        <span class="home-person-name">${escapeHTML(person.name)}</span>
+        <span class="home-person-counts">${countLine}</span>
       </div>
-    </div>
-  `;
-}
-
-// One task as a compact bullet row (no notes/subtasks/recurrence chrome)
-function homeBulletHTML(task) {
-  const status      = getComputedStatus(task);
-  const isCompleted = status === 'completed';
-  const isOverdue   = status === 'overdue';
-  const isUrgent    = task.priority === 'urgent';
-  const timeLabel   = task.time ? formatTimeLabel(task.time) : '';
-  const overdueChip = isOverdue && task.dueDate
-    ? `<span class="home-bullet-overdue">was ${escapeHTML(formatDate(task.dueDate))}</span>`
-    : '';
-  const urgentMark  = isUrgent ? '<span class="home-bullet-urgent">!</span>' : '';
-
-  return `
-    <div class="home-bullet ${isOverdue ? 'home-bullet--overdue' : ''}">
-      <button class="home-bullet-check ${isCompleted ? 'home-bullet-check--done' : ''}" data-id="${task.id}" aria-label="Mark complete">
-        ${isCompleted ? `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>` : ''}
-      </button>
-      <button class="home-bullet-body" data-id="${task.id}" type="button">
-        <span class="home-bullet-desc">${urgentMark}${escapeHTML(task.description)}</span>
-        <span class="home-bullet-meta">
-          ${timeLabel ? `<span class="home-bullet-time">${escapeHTML(timeLabel)}</span>` : ''}
-          ${overdueChip}
-        </span>
+      ${body}
+      <button class="home-person-showall" type="button" ${showAllAttrs}>
+        Show all ${person.counts.total} <span aria-hidden="true">→</span>
       </button>
     </div>
   `;
-}
-
-function formatTimeLabel(time) {
-  // "15:00" → "3:00 PM"
-  const [hStr, mStr] = String(time).split(':');
-  const h = Number(hStr); const m = Number(mStr);
-  if (!Number.isFinite(h) || !Number.isFinite(m)) return time;
-  const period = h >= 12 ? 'PM' : 'AM';
-  const h12 = h === 0 ? 12 : (h > 12 ? h - 12 : h);
-  return `${h12}:${String(m).padStart(2, '0')} ${period}`;
 }
 
 // ── Daily digest card (LLM summary fetched via send-daily-digest Edge Function) ─

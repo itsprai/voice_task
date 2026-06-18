@@ -80,44 +80,44 @@ Tasks (12 total, showing 10): ["Pay rent","Email lawyer","School fee","Buy groce
   }
 }
 
-// Build a one-paragraph "morning briefing" for the Home page — slightly longer
-// and more conversational than the push-notification version, with named-time
-// anchors and overdue carryover. Returns null on any failure so the client can
-// fall back to plain counts.
-async function summarizeHomeBriefing(
-  todayDescriptions: string[],
-  todayCount: number,
-  overdueCount: number,
-  urgentCount: number,
-): Promise<string | null> {
-  if (!GROQ_API_KEY) return null;
-  if (todayCount === 0 && overdueCount === 0) return null;
+// ─────────────────────────────────────────────────────────────────────────────
+// Per-person summaries — single Groq call producing one short sentence per
+// teammate (including the manager's "Me"). One LLM round-trip serves the
+// whole Home page so cost stays predictable.
+// Returns { [personId]: "summary sentence" } on success, {} on failure.
+// ─────────────────────────────────────────────────────────────────────────────
+async function summarizePerPerson(
+  people: Array<{
+    id: string;
+    name: string;
+    todayCount: number;
+    overdueCount: number;
+    urgentCount: number;
+    descriptions: string[];
+  }>,
+): Promise<Record<string, string>> {
+  if (!GROQ_API_KEY || !people.length) return {};
 
   const systemPrompt =
-    `You write a SHORT one-paragraph morning briefing (≤2 sentences, max ~220 chars) summarizing a user's day.
-Be warm but factual — NO greetings, no "Hi", no "Hello", no "you have", no emojis, no bullet lists.
-Highlight overdue items first when present. Mention urgency. Acknowledge light or empty days.
-Group themes when many tasks. Reference time-of-day anchors (morning/afternoon/evening) when helpful.
-Return ONLY the paragraph — no quotes, no markdown.
+    `You write ONE short sentence summarizing each person's day for a manager's morning briefing.
+Rules:
+- Max ~90 characters per sentence.
+- Warm but factual. No greetings. No emojis. No "you have". No bullet lists.
+- Highlight overdue items when present. Mention urgency when set. Acknowledge light days.
+- Reference the actual task descriptions or themes — be specific, not generic.
+- Return ONLY a JSON object: {"summaries": {"<personId>": "sentence", ...}}.
 
 Examples:
-Today (1): ["Call client"]. Overdue: 0. Urgent: 0.
-→ Quiet day — just a call with the client. Use the morning to clear the inbox.
+Input: [{"id":"a1","name":"Aditya","todayCount":3,"overdueCount":1,"urgentCount":1,"descriptions":["Deploy fix","Q4 deck","Send report"]}]
+Output: {"summaries":{"a1":"Carrying over an invoice plus three tasks today including the urgent deploy fix."}}
 
-Today (5): ["Deploy fix","Send Q4 report","Standup","Demo prep","Code review"]. Overdue: 0. Urgent: 2.
-→ Busy day with five tasks and two urgent — front-load the deploy fix and Q4 report before noon, then standup, demo prep, and the code review fit the afternoon.
+Input: [{"id":"b1","name":"Anshul","todayCount":1,"overdueCount":0,"urgentCount":0,"descriptions":["Demo prep"]}]
+Output: {"summaries":{"b1":"One task — demo prep this afternoon."}}
 
-Today (4): ["Bug fix","Standup","Review PR","Demo"]. Overdue: 2. Urgent: 1.
-→ Two overdue items from yesterday — tackle those first. After that, four fresh tasks today, with the demo flagged urgent.
+Input: [{"id":"c1","name":"Me","todayCount":0,"overdueCount":0,"urgentCount":0,"descriptions":[]}]
+Output: {"summaries":{"c1":"Nothing on deck — quiet day."}}`;
 
-Today (0): []. Overdue: 0. Urgent: 0.
-→ Clean slate today — nothing scheduled, take the morning easy or plan ahead.
-
-Today (2): ["Pay rent","Email lawyer"]. Overdue: 0. Urgent: 0.
-→ Light day with two errands — pay rent and email the lawyer, then the day is yours.`;
-
-  const userPrompt =
-    `Today (${todayCount}): ${JSON.stringify(todayDescriptions)}. Overdue: ${overdueCount}. Urgent: ${urgentCount}.`;
+  const userPrompt = JSON.stringify(people);
 
   try {
     const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
@@ -127,31 +127,35 @@ Today (2): ["Pay rent","Email lawyer"]. Overdue: 0. Urgent: 0.
         Authorization:   `Bearer ${GROQ_API_KEY}`,
       },
       body: JSON.stringify({
-        model:       GROQ_MODEL,
-        messages:    [
+        model:           GROQ_MODEL,
+        messages:        [
           { role: "system", content: systemPrompt },
           { role: "user",   content: userPrompt   },
         ],
-        temperature: 0.35,
-        max_tokens:  120,
+        temperature:     0.3,
+        max_tokens:      400,
+        response_format: { type: "json_object" },
       }),
       signal: AbortSignal.timeout(6000),
     });
-    if (!res.ok) return null;
+    if (!res.ok) return {};
     const data = await res.json();
-    const text = data?.choices?.[0]?.message?.content?.trim();
-    if (!text) return null;
-    return text.replace(/^["'`*_]+|["'`*_]+$/g, "").slice(0, 260);
+    const parsed = JSON.parse(data?.choices?.[0]?.message?.content ?? "{}");
+    const out: Record<string, string> = {};
+    for (const [id, val] of Object.entries(parsed.summaries ?? {})) {
+      if (typeof val === "string") out[id] = (val as string).slice(0, 140);
+    }
+    return out;
   } catch (err) {
-    console.warn("summarizeHomeBriefing failed:", (err as Error)?.message);
-    return null;
+    console.warn("summarizePerPerson failed:", (err as Error)?.message);
+    return {};
   }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Preview handler — used by the web app's Home page.
 // Authenticates via the caller's JWT, gathers today's pending tasks + overdue
-// + urgent counts, returns a one-paragraph briefing.
+// + urgent counts, plus per-teammate summaries when caller is an assigner.
 // ─────────────────────────────────────────────────────────────────────────────
 async function handlePreview(req: Request): Promise<Response> {
   // 1. Authenticate the caller
@@ -188,41 +192,124 @@ async function handlePreview(req: Request): Promise<Response> {
     today = new Date().toISOString().split("T")[0];
   }
 
-  // 3. Pull today's pending + overdue counts (scoped to this user via service role)
-  const { data: todayTasks } = await admin
+  // 3. Pull every task this caller can SEE that's relevant to today (Postgres
+  // applies the filter; RLS already scopes the row visibility per user).
+  //    Relevant = pending AND (dueDate = today OR dueDate < today).
+  //    For the caller-as-assigner: any task they assigned (assigner_id = me).
+  //    For the caller-as-assignee: any task assigned to them (assignee_id = me).
+  // We don't know the caller's role yet — use a single query with OR so service
+  // role returns rows that satisfy either condition for this user.
+  const { data: allRelevant } = await admin
     .from("tasks")
-    .select("description, priority")
-    .eq("assignee_id", user.id)
-    .eq("dueDate", today)
+    .select("id, description, priority, dueDate, time, dueAt, status, assigner_id, assignee_id, added_by")
+    .or(`assigner_id.eq.${user.id},assignee_id.eq.${user.id}`)
     .eq("status", "pending")
-    .order("time", { ascending: true })
-    .limit(10);
+    .lte("dueDate", today)
+    .order("time", { ascending: true });
 
-  const todayCount = todayTasks?.length ?? 0;
-  const urgentCount = (todayTasks ?? []).filter((t: { priority?: string }) => t.priority === "urgent").length;
-
-  const { count: overdueCount } = await admin
-    .from("tasks")
-    .select("*", { count: "exact", head: true })
-    .eq("assignee_id", user.id)
-    .lt("dueDate", today)
-    .eq("status", "pending");
-
-  // 4. Generate the briefing
-  const descriptions = (todayTasks ?? []).map((t: { description: string }) => t.description);
-  const summary = await summarizeHomeBriefing(
-    descriptions,
-    todayCount,
-    overdueCount ?? 0,
-    urgentCount,
+  // 4. Caller-scoped counts (their own assignee_id view — like an assignee role
+  // would see). Used by the top-level digest paragraph.
+  const myTodayTasks = (allRelevant ?? []).filter(
+    (t: { assignee_id: string; dueDate: string }) =>
+      t.assignee_id === user.id && t.dueDate === today,
   );
+  const myOverdueTasks = (allRelevant ?? []).filter(
+    (t: { assignee_id: string; dueDate: string }) =>
+      t.assignee_id === user.id && t.dueDate < today,
+  );
+  const todayCount = myTodayTasks.length;
+  const overdueCount = myOverdueTasks.length;
+  const urgentCount = myTodayTasks.filter((t: { priority?: string }) => t.priority === "urgent").length;
+
+  // Global summary intentionally skipped — Home now uses per-person cards only.
+  const summary: string | null = null;
+
+  // 5. Per-person buckets — only meaningful when caller is the assigner across
+  // multiple teammates. We bucket by assignee_id, including the caller's own
+  // personal-task bucket. Names come from profiles in one batch.
+  const callerIsAssigner = (allRelevant ?? []).some(
+    (t: { assigner_id: string }) => t.assigner_id === user.id,
+  );
+
+  const perPerson: Array<{
+    id: string;
+    name: string;
+    todayCount: number;
+    overdueCount: number;
+    urgentCount: number;
+    descriptions: string[];
+    summary: string;
+  }> = [];
+
+  if (callerIsAssigner) {
+    // Build buckets keyed by assignee_id. Only count rows the caller assigned
+    // (assigner_id = me) so we don't leak the assignee's view of OTHER managers'
+    // tasks into the caller's per-person summaries.
+    type Bucket = {
+      ids: Set<string>;
+      today: { description: string; priority?: string }[];
+      overdue: { description: string }[];
+      urgent: number;
+    };
+    const buckets = new Map<string, Bucket>();
+    for (const t of (allRelevant ?? []) as Array<{
+      id: string; description: string; priority?: string;
+      dueDate: string; assigner_id: string; assignee_id: string;
+    }>) {
+      if (t.assigner_id !== user.id) continue;
+      const key = t.assignee_id;
+      if (!buckets.has(key)) buckets.set(key, { ids: new Set(), today: [], overdue: [], urgent: 0 });
+      const b = buckets.get(key)!;
+      b.ids.add(t.id);
+      if (t.dueDate === today)        b.today.push({ description: t.description, priority: t.priority });
+      else if (t.dueDate < today)     b.overdue.push({ description: t.description });
+      if (t.priority === "urgent" && t.dueDate === today) b.urgent++;
+    }
+
+    // Resolve names in one batch
+    const personIds = Array.from(buckets.keys());
+    let names: Record<string, string> = {};
+    if (personIds.length) {
+      const { data: profs } = await admin
+        .from("profiles")
+        .select("id, full_name")
+        .in("id", personIds);
+      names = Object.fromEntries((profs ?? []).map((p: { id: string; full_name: string }) => [p.id, p.full_name]));
+    }
+
+    // Shape input for the LLM
+    const llmInput = personIds.map(id => {
+      const b = buckets.get(id)!;
+      return {
+        id,
+        name: id === user.id ? "Me" : (names[id] || "Unknown"),
+        todayCount: b.today.length,
+        overdueCount: b.overdue.length,
+        urgentCount: b.urgent,
+        descriptions: [
+          ...b.overdue.map(t => t.description),
+          ...b.today.map(t => t.description),
+        ].slice(0, 8),
+      };
+    });
+
+    const summaries = await summarizePerPerson(llmInput);
+
+    for (const p of llmInput) {
+      perPerson.push({
+        ...p,
+        summary: summaries[p.id] || "",
+      });
+    }
+  }
 
   return new Response(
     JSON.stringify({
       summary,
       todayCount,
-      overdueCount: overdueCount ?? 0,
+      overdueCount,
       urgentCount,
+      perPerson,
       generatedAt: new Date().toISOString(),
     }),
     { headers: { ...corsHeaders, "Content-Type": "application/json" } },
