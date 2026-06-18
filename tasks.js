@@ -476,15 +476,132 @@ function renderHomePage(tasks, nameMap = {}) {
     digestEl.innerHTML = renderDigestCard(cache, { pendingCount, overdueCount });
   }
 
-  // Today's pending tasks (urgent first via shared sort)
-  const todayTasks = sortByDateTime(
-    teamOnly.filter(t => getComputedStatus(t) === 'pending' && formatDate(t.dueDate) === 'Today'),
-    'asc'
-  );
+  // Today's highlights — overdue + today, grouped by assignee.
+  // Personal tasks (assigner=me, assignee=me) are folded into a "Me" group.
+  const relevant = teamOnly.filter(t => {
+    const s = getComputedStatus(t);
+    if (s === 'overdue') return true;
+    if (s === 'pending' && formatDate(t.dueDate) === 'Today') return true;
+    return false;
+  });
 
-  listEl.innerHTML = todayTasks.length
-    ? `<div class="card-list">${todayTasks.map(t => taskCardHTML(t, nameMap)).join('')}</div>`
-    : `<div class="empty-section">Nothing due today — tap the mic to assign a task</div>`;
+  // Also include personal tasks the manager has assigned to themselves for today/overdue
+  const personalRelevant = tasks.filter(t => {
+    if (!isPersonalTask(t, myId)) return false;
+    const s = getComputedStatus(t);
+    if (s === 'overdue') return true;
+    if (s === 'pending' && formatDate(t.dueDate) === 'Today') return true;
+    return false;
+  });
+
+  const allRelevant = [...relevant, ...personalRelevant];
+
+  if (!allRelevant.length) {
+    listEl.innerHTML = `<div class="empty-section">Nothing on deck today — tap the mic to assign one</div>`;
+    return;
+  }
+
+  // Group by assignee. Personal tasks share the "Me" group keyed by myId.
+  const byPerson = new Map();
+  for (const t of allRelevant) {
+    const key = t.assignee_id || 'unassigned';
+    if (!byPerson.has(key)) byPerson.set(key, []);
+    byPerson.get(key).push(t);
+  }
+
+  // Sort each person's tasks (overdue → urgent → time) and the persons themselves
+  // (most-pressing first: overdue count desc, then urgent count desc, then total desc).
+  const personEntries = Array.from(byPerson.entries()).map(([id, list]) => {
+    const sorted = sortHomeBullets(list);
+    const overdueCount = list.filter(t => getComputedStatus(t) === 'overdue').length;
+    const urgentCount  = list.filter(t => t.priority === 'urgent').length;
+    return { id, list: sorted, overdueCount, urgentCount, total: list.length };
+  }).sort((a, b) => {
+    if (a.overdueCount !== b.overdueCount) return b.overdueCount - a.overdueCount;
+    if (a.urgentCount  !== b.urgentCount)  return b.urgentCount  - a.urgentCount;
+    return b.total - a.total;
+  });
+
+  listEl.innerHTML = `
+    <div class="home-highlights-heading">Today's highlights</div>
+    <div class="home-highlights">
+      ${personEntries.map(p => homePersonBlock(p, nameMap, myId)).join('')}
+    </div>
+  `;
+}
+
+// Sort a person's bullet list: overdue → urgent → time
+function sortHomeBullets(list) {
+  return [...list].sort((a, b) => {
+    const aOver = getComputedStatus(a) === 'overdue' ? 1 : 0;
+    const bOver = getComputedStatus(b) === 'overdue' ? 1 : 0;
+    if (aOver !== bOver) return bOver - aOver;
+    const aUrg = a.priority === 'urgent' ? 1 : 0;
+    const bUrg = b.priority === 'urgent' ? 1 : 0;
+    if (aUrg !== bUrg) return bUrg - aUrg;
+    return (a.dueAt ?? Number.MAX_SAFE_INTEGER) - (b.dueAt ?? Number.MAX_SAFE_INTEGER);
+  });
+}
+
+// Render one assignee group: header + bullet list
+function homePersonBlock(person, nameMap, myId) {
+  const isMe = person.id === myId;
+  const name = isMe ? 'Me' : (nameMap[person.id] || 'Unknown');
+  const headerArrow = isMe
+    ? ''  // personal — no separate page to navigate to
+    : `<span class="home-person-arrow" aria-hidden="true">→</span>`;
+  const headerAttrs = isMe ? '' : `data-person-id="${person.id}"`;
+
+  return `
+    <div class="home-person-block">
+      <button class="home-person-header" ${headerAttrs} type="button">
+        <span class="home-person-name">${escapeHTML(name)}</span>
+        <span class="home-person-count">${person.total}</span>
+        ${headerArrow}
+      </button>
+      <div class="home-person-bullets">
+        ${person.list.map(t => homeBulletHTML(t)).join('')}
+      </div>
+    </div>
+  `;
+}
+
+// One task as a compact bullet row (no notes/subtasks/recurrence chrome)
+function homeBulletHTML(task) {
+  const status      = getComputedStatus(task);
+  const isCompleted = status === 'completed';
+  const isOverdue   = status === 'overdue';
+  const isUrgent    = task.priority === 'urgent';
+  const timeLabel   = task.time ? formatTimeLabel(task.time) : '';
+  const overdueChip = isOverdue && task.dueDate
+    ? `<span class="home-bullet-overdue">was ${escapeHTML(formatDate(task.dueDate))}</span>`
+    : '';
+  const urgentMark  = isUrgent ? '<span class="home-bullet-urgent">!</span>' : '';
+
+  return `
+    <div class="home-bullet ${isOverdue ? 'home-bullet--overdue' : ''}">
+      <button class="home-bullet-check ${isCompleted ? 'home-bullet-check--done' : ''}" data-id="${task.id}" aria-label="Mark complete">
+        ${isCompleted ? `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>` : ''}
+      </button>
+      <button class="home-bullet-body" data-id="${task.id}" type="button">
+        <span class="home-bullet-desc">${urgentMark}${escapeHTML(task.description)}</span>
+        <span class="home-bullet-meta">
+          ${timeLabel ? `<span class="home-bullet-time">${escapeHTML(timeLabel)}</span>` : ''}
+          ${overdueChip}
+        </span>
+      </button>
+    </div>
+  `;
+}
+
+function formatTimeLabel(time) {
+  // "15:00" → "3:00 PM"
+  const [hStr, mStr] = String(time).split(':');
+  const h = Number(hStr); const m = Number(mStr);
+  if (!Number.isFinite(h) || !Number.isFinite(m)) return time;
+  const period = h >= 12 ? 'PM' : 'AM';
+  const h12 = h === 0 ? 12 : (h > 12 ? h - 12 : h);
+  return `${h12}:${String(m).padStart(2, '0')} ${period}`;
 }
 
 // ── Daily digest card (LLM summary fetched via send-daily-digest Edge Function) ─

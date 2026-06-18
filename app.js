@@ -131,6 +131,42 @@ const App = {
         this._refreshHomeDigest({ force: true });
         return;
       }
+
+      // Home page — tap bullet checkbox to mark complete
+      const homeCheck = e.target.closest('.home-bullet-check');
+      if (homeCheck) {
+        e.preventDefault();
+        const task = this.state.tasks.find(t => t.id === homeCheck.dataset.id);
+        if (!task) return;
+        const next = task.status === 'completed' ? 'pending' : 'completed';
+        this.state.tasks = Storage.update(task.id, { status: next });
+        if (next === 'completed') {
+          Notifications.cancelLocal(task.id);
+          this._maybeGenerateNextRecurrence(task);
+        } else {
+          Notifications.scheduleLocal({ ...task, status: 'pending' });
+        }
+        renderHomePage(this.state.tasks, this.state.nameMap);
+        return;
+      }
+
+      // Home page — tap bullet body to open the task on the Team page
+      const homeBody = e.target.closest('.home-bullet-body');
+      if (homeBody) {
+        const task = this.state.tasks.find(t => t.id === homeBody.dataset.id);
+        if (!task) return;
+        const myId = Auth.profile?.id;
+        const personId = task.assignee_id || myId;
+        this.navigateTo('pipeline', { personId, keepState: true });
+        return;
+      }
+
+      // Home page — tap a person header → jump to that person on Team page
+      const homePerson = e.target.closest('.home-person-header[data-person-id]');
+      if (homePerson) {
+        this.navigateTo('pipeline', { personId: homePerson.dataset.personId, keepState: true });
+        return;
+      }
     });
 
     document.body.addEventListener('change', async e => {
