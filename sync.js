@@ -198,18 +198,49 @@ const Sync = {
   },
 
   // ── Real-time subscription ─────────────────────────────────────────────────
+  // Subscribes to INSERT/UPDATE/DELETE on tasks, invites, assigner_assignee_map.
+  // Cross-device updates flow through here. RLS is applied to the stream, so
+  // each client only receives events for rows it's allowed to SELECT.
+  //
+  // Two requirements for this to fire across devices:
+  //   1. The table is in the supabase_realtime publication (see ALTER PUBLICATION).
+  //   2. The realtime websocket has the user's JWT so RLS evaluates correctly.
   subscribe(onRemoteChange) {
     if (!SupabaseClient) return;
+
+    // Ensure realtime has the user's JWT — required for RLS to evaluate
+    // correctly on the change stream. supabase-js usually does this on auth
+    // events, but we set it explicitly to avoid the race where subscribe()
+    // runs before the first onAuthStateChange.
+    if (Auth.token) {
+      try { SupabaseClient.realtime.setAuth(Auth.token); } catch {}
+    }
+
     const guard = () => {
       if (Date.now() - this._lastFlushAt < 2000) return;
       onRemoteChange();
     };
-    SupabaseClient
+
+    // Tear down any previous channel so re-subscribes (e.g. after sign-in)
+    // don't stack duplicates.
+    if (this._channel) {
+      try { SupabaseClient.removeChannel(this._channel); } catch {}
+      this._channel = null;
+    }
+
+    this._channel = SupabaseClient
       .channel('taskvoice-v2-realtime')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'tasks' },               guard)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'tasks' },                guard)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'invites' },              guard)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'assigner_assignee_map' }, guard)
-      .subscribe();
+      .subscribe(status => {
+        // Surface subscribe outcome so silent failures are obvious in console.
+        console.log('[Sync] realtime channel status:', status);
+        if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
+          // Soft retry after a short delay so transient drops self-heal.
+          setTimeout(() => this.subscribe(onRemoteChange), 3000);
+        }
+      });
   },
 
   // ── Per-user preferences ───────────────────────────────────────────────────

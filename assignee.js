@@ -9,31 +9,33 @@ function renderAssigneeTasksPage(tasks, assigners, editingTaskId = null) {
   const main = document.getElementById('assignee-main');
   if (!main) return;
 
-  const myId    = Auth.profile?.id;
-  const meEntry = { id: myId, full_name: 'Me', _isMe: true };
-  const allOptions = [meEntry, ...assigners];
+  // Pinned managers float to the front of the chip strip (preference-driven)
+  const pinnedIds = (typeof App !== 'undefined' ? App.state.pinnedAssignerIds : []) || [];
+  const pinnedSet = new Set(pinnedIds);
+  const pinnedManagers   = assigners.filter(a => pinnedSet.has(a.id));
+  const unpinnedManagers = assigners.filter(a => !pinnedSet.has(a.id));
+  const orderedAssigners = [...pinnedManagers, ...unpinnedManagers];
 
-  // Active selection (Me is a valid choice even when no managers exist)
+  // Active selection — first manager by default. Teammate has no personal-tasks chip.
   const stateActive = typeof App !== 'undefined' ? App.state.activeAssignerId : null;
-  const activeId = allOptions.some(o => o.id === stateActive) ? stateActive : (assigners[0]?.id || myId);
+  const activeId = orderedAssigners.some(o => o.id === stateActive) ? stateActive : orderedAssigners[0]?.id;
   if (typeof App !== 'undefined') App.state.activeAssignerId = activeId;
-  const active   = allOptions.find(o => o.id === activeId);
-  const isMe     = !!active?._isMe;
+  const active = orderedAssigners.find(o => o.id === activeId);
 
-  const chips = allOptions.map(a => {
-    const initial = escapeHTML(a._isMe ? 'M' : (a.full_name.trim()[0]?.toUpperCase() || '?'));
+  const chips = orderedAssigners.map(a => {
+    const initial = escapeHTML(a.full_name.trim()[0]?.toUpperCase() || '?');
+    const pinIcon = pinnedSet.has(a.id)
+      ? `<svg class="tab-pin-icon" viewBox="0 0 24 24" fill="currentColor" width="10" height="10"><path d="M16 9V4h1c.55 0 1-.45 1-1s-.45-1-1-1H7c-.55 0-1 .45-1 1s.45 1 1 1h1v5c0 1.66-1.34 3-3 3v2h5.97v7l1 1 1-1v-7H18v-2c-1.66 0-3-1.34-3-3z"/></svg>`
+      : '';
     return `
       <button class="person-tab ${a.id === activeId ? 'person-tab--active' : ''}" data-assigner-id="${a.id}">
-        <span class="tab-avatar">${initial}</span>${escapeHTML(a.full_name)}
+        <span class="tab-avatar">${initial}</span>${pinIcon}${escapeHTML(a.full_name)}
       </button>
     `;
   }).join('');
 
-  // Group active person's tasks by due status (same as the manager pipeline).
-  // Me = personal tasks (assigner=me & assignee=me); else = tasks from that manager.
-  const personTasks = isMe
-    ? tasks.filter(t => t.assigner_id === myId && t.assignee_id === myId)
-    : tasks.filter(t => t.assigner_id === activeId);
+  // Tasks from the currently active manager
+  const personTasks = activeId ? tasks.filter(t => t.assigner_id === activeId) : [];
   const today = new Date(); today.setHours(0, 0, 0, 0);
 
   const groupOverdue = [], groupToday = [], groupUpcoming = [], groupNoDate = [], groupDone = [];
@@ -55,17 +57,18 @@ function renderAssigneeTasksPage(tasks, assigners, editingTaskId = null) {
     `;
   };
 
+  // Section order: Today → Overdue → Upcoming → No Date → Completed
   const sections = [
-    section('Overdue',  'overdue',  groupOverdue),
-    section('Today',    'today',    groupToday),
-    section('Upcoming', 'upcoming', groupUpcoming),
-    section('No Date',  'nodate',   groupNoDate),
-    section('Done',     'done',     groupDone, 'desc')
+    section('Today',     'today',    groupToday),
+    section('Overdue',   'overdue',  groupOverdue),
+    section('Upcoming',  'upcoming', groupUpcoming),
+    section('No Date',   'nodate',   groupNoDate),
+    section('Completed', 'done',     groupDone, 'desc')
   ].join('');
 
-  const emptyMsg = isMe
-    ? 'No personal tasks yet. Tap + to add one.'
-    : `No tasks from ${escapeHTML(active?.full_name || 'this manager')} yet.`;
+  const emptyMsg = active
+    ? `No tasks from ${escapeHTML(active.full_name)} yet.`
+    : 'No managers linked yet. Ask your manager to invite you.';
   main.innerHTML = `
     <div class="pipeline-tabs assignee-tabs">${chips}</div>
     ${sections || `<div class="empty-section">${emptyMsg}</div>`}
@@ -136,14 +139,49 @@ function assigneeCardHTML(task, computedStatus, editingTaskId) {
   `;
 }
 
+// ── Pin panel (lets the teammate pin managers to the front of the chip strip) ─
+function renderAssigneePinPanel(show, assigners, pinnedIds) {
+  const panel = document.getElementById('assignee-pin-select-panel');
+  if (!panel) return;
+  if (!show) { panel.innerHTML = ''; panel.classList.add('hidden'); return; }
+
+  if (!assigners.length) {
+    panel.innerHTML = `
+      <div class="pin-panel-header">
+        <span class="pin-panel-title">Pin Managers</span>
+        <button id="assignee-pin-panel-close" class="pin-panel-close">&#x2715;</button>
+      </div>
+      <p class="pin-panel-empty">No managers linked yet.</p>
+    `;
+    panel.classList.remove('hidden');
+    return;
+  }
+
+  const pinnedSet = new Set(pinnedIds);
+  panel.innerHTML = `
+    <div class="pin-panel-header">
+      <span class="pin-panel-title">Pin Managers</span>
+      <button id="assignee-pin-panel-close" class="pin-panel-close">&#x2715;</button>
+    </div>
+    <div class="pin-select-list">
+      ${assigners.map(m => {
+        const isPinned = pinnedSet.has(m.id);
+        return `
+          <button class="pin-select-item ${isPinned ? 'pin-select-item--pinned' : ''}"
+                  data-pin-assigner-id="${m.id}">
+            ${isPinned ? `<svg viewBox="0 0 24 24" fill="currentColor" width="12" height="12"><path d="M16 9V4h1c.55 0 1-.45 1-1s-.45-1-1-1H7c-.55 0-1 .45-1 1s.45 1 1 1h1v5c0 1.66-1.34 3-3 3v2h5.97v7l1 1 1-1v-7H18v-2c-1.66 0-3-1.34-3-3z"/></svg>` : ''}
+            ${escapeHTML(m.full_name)}
+          </button>
+        `;
+      }).join('')}
+    </div>
+  `;
+  panel.classList.remove('hidden');
+}
+
 // ── Add Task form (assignee adds their own task attributed to an assigner) ────
 function renderAssigneeAddTaskForm(assigners, activeAssignerId) {
-  const myId = Auth.profile?.id;
-  const isMe = activeAssignerId === myId;
-
-  const active = isMe
-    ? { id: myId, full_name: Auth.profile?.full_name || 'Me' }
-    : (assigners.find(a => a.id === activeAssignerId) || assigners[0]);
+  const active = assigners.find(a => a.id === activeAssignerId) || assigners[0];
 
   if (!active) return `
     <div class="sheet-backdrop" data-close-sheet></div>
@@ -155,9 +193,7 @@ function renderAssigneeAddTaskForm(assigners, activeAssignerId) {
     </div>
   `;
 
-  const contextLine = isMe
-    ? `<p class="sheet-context">Personal task</p>`
-    : `<p class="sheet-context">From <strong>${escapeHTML(active.full_name)}</strong></p>`;
+  const contextLine = `<p class="sheet-context">From <strong>${escapeHTML(active.full_name)}</strong></p>`;
 
   const recurOpts = RECURRENCE_OPTIONS.map(o =>
     `<option value="${o.value}">${escapeHTML(o.label)}</option>`

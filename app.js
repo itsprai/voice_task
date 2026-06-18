@@ -32,6 +32,10 @@ const App = {
     activeAssignerId: null,
     editingAssigneeTaskId: null,
     showAssigneeAddForm: false,
+    pinnedAssignerIds: (() => {
+      try { return JSON.parse(localStorage.getItem('vtm_v2_pinned_assigners') || '[]'); } catch { return []; }
+    })(),
+    assigneePinMode: false,
     // Invite token from URL (set before auth resolves)
     pendingInviteToken: null
   },
@@ -534,6 +538,12 @@ const App = {
           }
         } else {
           this.state.assigners = team;
+          // Load pinned-managers preference for this teammate
+          const pinnedJson = await Sync.loadPreference('pinned_assigners');
+          if (pinnedJson) {
+            try { this.state.pinnedAssignerIds = JSON.parse(pinnedJson); } catch {}
+            localStorage.setItem('vtm_v2_pinned_assigners', JSON.stringify(this.state.pinnedAssignerIds));
+          }
         }
       }
 
@@ -1482,6 +1492,25 @@ const App = {
     // Render add form in the dedicated slot
     const formSlot = document.getElementById('assignee-add-form-slot');
 
+    // ── Pin button in header — toggles the manager-pin picker ────────────────
+    document.getElementById('assignee-pin-btn')?.addEventListener('click', () => {
+      this.state.assigneePinMode = !this.state.assigneePinMode;
+      this._syncAssigneePinBtn();
+      renderAssigneePinPanel(this.state.assigneePinMode, this.state.assigners, this.state.pinnedAssignerIds);
+    });
+
+    // ── Pin panel interactions ───────────────────────────────────────────────
+    document.getElementById('assignee-pin-select-panel')?.addEventListener('click', e => {
+      if (e.target.closest('#assignee-pin-panel-close')) {
+        this.state.assigneePinMode = false;
+        this._syncAssigneePinBtn();
+        renderAssigneePinPanel(false, this.state.assigners, this.state.pinnedAssignerIds);
+        return;
+      }
+      const pinBtn = e.target.closest('[data-pin-assigner-id]');
+      if (pinBtn) this._toggleAssigneePin(pinBtn.dataset.pinAssignerId);
+    });
+
     main.addEventListener('click', e => {
       const mgrTab   = e.target.closest('.person-tab[data-assigner-id]');
       const checkBtn = e.target.closest('.check-btn');
@@ -1710,6 +1739,26 @@ const App = {
     const btn = document.getElementById('pipeline-pin-btn');
     if (!btn) return;
     const active = this.state.pinnedIds.length > 0 || this.state.pipelinePinMode;
+    btn.classList.toggle('header-pin-btn--active', active);
+  },
+
+  // ── Assignee pin helpers (parallel to the manager pin flow) ────────────────
+  _toggleAssigneePin(id) {
+    const arr = [...this.state.pinnedAssignerIds];
+    const idx = arr.indexOf(id);
+    if (idx >= 0) { arr.splice(idx, 1); this.showToast('Unpinned'); }
+    else           { arr.push(id);       this.showToast('Pinned'); }
+    this.state.pinnedAssignerIds = arr;
+    localStorage.setItem('vtm_v2_pinned_assigners', JSON.stringify(arr));
+    Sync.savePreference('pinned_assigners', arr.length ? JSON.stringify(arr) : null);
+    renderAssigneePinPanel(this.state.assigneePinMode, this.state.assigners, this.state.pinnedAssignerIds);
+    renderAssigneeTasksPage(this.state.tasks, this.state.assigners, this.state.editingAssigneeTaskId);
+  },
+
+  _syncAssigneePinBtn() {
+    const btn = document.getElementById('assignee-pin-btn');
+    if (!btn) return;
+    const active = this.state.pinnedAssignerIds.length > 0 || this.state.assigneePinMode;
     btn.classList.toggle('header-pin-btn--active', active);
   },
 

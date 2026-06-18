@@ -115,12 +115,13 @@ function renderPipelinePage(tasks, activePersonId, editMode, showAddPerson, pinn
     `;
   }
 
+  // Section order: Today → Overdue → Upcoming → No Date → Completed
   const sectionsHTML = [
-    pipelineSection('Overdue',  'overdue',  sortAsc(groupOverdue),  null),
-    pipelineSection('Today',    'today',    sortAsc(groupToday),    null),
-    pipelineSection('Upcoming', 'upcoming', sortAsc(groupUpcoming), null),
-    pipelineSection('No Date',  'nodate',   groupNoDate,            null),
-    pipelineSection('Done',     'done',     sortDesc(groupDone),    null),
+    pipelineSection('Today',     'today',    sortAsc(groupToday),    null),
+    pipelineSection('Overdue',   'overdue',  sortAsc(groupOverdue),  null),
+    pipelineSection('Upcoming',  'upcoming', sortAsc(groupUpcoming), null),
+    pipelineSection('No Date',   'nodate',   groupNoDate,            null),
+    pipelineSection('Completed', 'done',     sortDesc(groupDone),    null),
   ].join('');
 
   const emptyMsg = isMeActive
@@ -141,13 +142,13 @@ function pipelineCardHTML(task, editMode, editingTaskId) {
   const isEditing   = editingTaskId === task.id;
   const selfAdded   = task.added_by && task.added_by === task.assignee_id;
 
-  const editBtnHTML = editMode
-    ? `<button class="pipeline-task-edit-btn" data-id="${task.id}" aria-label="Edit task">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="15" height="15">
-          <path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/>
-        </svg>
-       </button>`
-    : '';
+  // Pencil edit button — always visible (matches the teammate side).
+  // editMode now only gates the destructive delete X below.
+  const editBtnHTML = `<button class="pipeline-task-edit-btn" data-id="${task.id}" aria-label="Edit task">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="15" height="15">
+      <path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/>
+    </svg>
+   </button>`;
 
   const deleteBtnHTML = editMode
     ? `<button class="pipeline-task-delete-btn" data-id="${task.id}" aria-label="Delete task">&#x2715;</button>`
