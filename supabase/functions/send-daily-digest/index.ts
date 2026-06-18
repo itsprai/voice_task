@@ -80,8 +80,172 @@ Tasks (12 total, showing 10): ["Pay rent","Email lawyer","School fee","Buy groce
   }
 }
 
+// Build a one-paragraph "morning briefing" for the Home page — slightly longer
+// and more conversational than the push-notification version, with named-time
+// anchors and overdue carryover. Returns null on any failure so the client can
+// fall back to plain counts.
+async function summarizeHomeBriefing(
+  todayDescriptions: string[],
+  todayCount: number,
+  overdueCount: number,
+  urgentCount: number,
+): Promise<string | null> {
+  if (!GROQ_API_KEY) return null;
+  if (todayCount === 0 && overdueCount === 0) return null;
+
+  const systemPrompt =
+    `You write a SHORT one-paragraph morning briefing (≤2 sentences, max ~220 chars) summarizing a user's day.
+Be warm but factual — NO greetings, no "Hi", no "Hello", no "you have", no emojis, no bullet lists.
+Highlight overdue items first when present. Mention urgency. Acknowledge light or empty days.
+Group themes when many tasks. Reference time-of-day anchors (morning/afternoon/evening) when helpful.
+Return ONLY the paragraph — no quotes, no markdown.
+
+Examples:
+Today (1): ["Call client"]. Overdue: 0. Urgent: 0.
+→ Quiet day — just a call with the client. Use the morning to clear the inbox.
+
+Today (5): ["Deploy fix","Send Q4 report","Standup","Demo prep","Code review"]. Overdue: 0. Urgent: 2.
+→ Busy day with five tasks and two urgent — front-load the deploy fix and Q4 report before noon, then standup, demo prep, and the code review fit the afternoon.
+
+Today (4): ["Bug fix","Standup","Review PR","Demo"]. Overdue: 2. Urgent: 1.
+→ Two overdue items from yesterday — tackle those first. After that, four fresh tasks today, with the demo flagged urgent.
+
+Today (0): []. Overdue: 0. Urgent: 0.
+→ Clean slate today — nothing scheduled, take the morning easy or plan ahead.
+
+Today (2): ["Pay rent","Email lawyer"]. Overdue: 0. Urgent: 0.
+→ Light day with two errands — pay rent and email the lawyer, then the day is yours.`;
+
+  const userPrompt =
+    `Today (${todayCount}): ${JSON.stringify(todayDescriptions)}. Overdue: ${overdueCount}. Urgent: ${urgentCount}.`;
+
+  try {
+    const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type":  "application/json",
+        Authorization:   `Bearer ${GROQ_API_KEY}`,
+      },
+      body: JSON.stringify({
+        model:       GROQ_MODEL,
+        messages:    [
+          { role: "system", content: systemPrompt },
+          { role: "user",   content: userPrompt   },
+        ],
+        temperature: 0.35,
+        max_tokens:  120,
+      }),
+      signal: AbortSignal.timeout(6000),
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    const text = data?.choices?.[0]?.message?.content?.trim();
+    if (!text) return null;
+    return text.replace(/^["'`*_]+|["'`*_]+$/g, "").slice(0, 260);
+  } catch (err) {
+    console.warn("summarizeHomeBriefing failed:", (err as Error)?.message);
+    return null;
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Preview handler — used by the web app's Home page.
+// Authenticates via the caller's JWT, gathers today's pending tasks + overdue
+// + urgent counts, returns a one-paragraph briefing.
+// ─────────────────────────────────────────────────────────────────────────────
+async function handlePreview(req: Request): Promise<Response> {
+  // 1. Authenticate the caller
+  const userClient = createClient(
+    Deno.env.get("SUPABASE_URL")!,
+    Deno.env.get("SUPABASE_ANON_KEY")!,
+    { global: { headers: { Authorization: req.headers.get("Authorization") ?? "" } } },
+  );
+  const { data: { user } } = await userClient.auth.getUser();
+  if (!user) {
+    return new Response(JSON.stringify({ error: "Not authenticated" }), {
+      status: 401,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+
+  // 2. Resolve "today" in the user's preferred timezone (falls back to UTC)
+  const admin = createClient(
+    Deno.env.get("SUPABASE_URL")!,
+    Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
+  );
+
+  const { data: prefs } = await admin
+    .from("user_preferences")
+    .select("key, value")
+    .eq("user_id", user.id)
+    .in("key", ["daily_reminder_tz"]);
+  const tz = (prefs?.find((p: { key: string }) => p.key === "daily_reminder_tz") as { value: string } | undefined)?.value || "UTC";
+
+  let today: string;
+  try {
+    today = new Intl.DateTimeFormat("en-CA", { timeZone: tz }).format(new Date());
+  } catch {
+    today = new Date().toISOString().split("T")[0];
+  }
+
+  // 3. Pull today's pending + overdue counts (scoped to this user via service role)
+  const { data: todayTasks } = await admin
+    .from("tasks")
+    .select("description, priority")
+    .eq("assignee_id", user.id)
+    .eq("dueDate", today)
+    .eq("status", "pending")
+    .order("time", { ascending: true })
+    .limit(10);
+
+  const todayCount = todayTasks?.length ?? 0;
+  const urgentCount = (todayTasks ?? []).filter((t: { priority?: string }) => t.priority === "urgent").length;
+
+  const { count: overdueCount } = await admin
+    .from("tasks")
+    .select("*", { count: "exact", head: true })
+    .eq("assignee_id", user.id)
+    .lt("dueDate", today)
+    .eq("status", "pending");
+
+  // 4. Generate the briefing
+  const descriptions = (todayTasks ?? []).map((t: { description: string }) => t.description);
+  const summary = await summarizeHomeBriefing(
+    descriptions,
+    todayCount,
+    overdueCount ?? 0,
+    urgentCount,
+  );
+
+  return new Response(
+    JSON.stringify({
+      summary,
+      todayCount,
+      overdueCount: overdueCount ?? 0,
+      urgentCount,
+      generatedAt: new Date().toISOString(),
+    }),
+    { headers: { ...corsHeaders, "Content-Type": "application/json" } },
+  );
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
+
+  // ── Preview mode ─────────────────────────────────────────────────────────
+  // Called by the Home page on the web app. Returns a one-paragraph briefing
+  // for the authenticated user's today + overdue picture.
+  //
+  // Body: { mode: "preview" }
+  // Returns: { summary, todayCount, overdueCount, urgentCount }
+  let body: { mode?: string } = {};
+  if (req.method === "POST") {
+    try { body = await req.json(); } catch { body = {}; }
+  }
+
+  if (body.mode === "preview") {
+    return handlePreview(req);
+  }
 
   if (!VAPID_PUBLIC_KEY || !VAPID_PRIVATE_KEY) {
     return new Response(JSON.stringify({ error: "VAPID keys not configured" }), {

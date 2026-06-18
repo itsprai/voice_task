@@ -445,9 +445,10 @@ function escapeHTML(str) {
 // ── Home page renderer (assigner: summary chips + today's tasks) ──────────────
 
 function renderHomePage(tasks, nameMap = {}) {
-  const chipsEl = document.getElementById('home-chips');
-  const listEl  = document.getElementById('home-tasks');
-  const dateEl  = document.getElementById('home-date');
+  const digestEl = document.getElementById('home-digest');
+  const chipsEl  = document.getElementById('home-chips');
+  const listEl   = document.getElementById('home-tasks');
+  const dateEl   = document.getElementById('home-date');
 
   if (dateEl) {
     dateEl.textContent = new Date().toLocaleDateString('en-US', {
@@ -469,7 +470,13 @@ function renderHomePage(tasks, nameMap = {}) {
     <span class="stat-chip"><span class="stat-chip-dot stat-chip-dot--overdue"></span>Overdue ${overdueCount}</span>
   `;
 
-  // Only tasks due today and still pending — done/overdue live on the Tasks page
+  // AI digest card — populated asynchronously by App._refreshHomeDigest()
+  if (digestEl) {
+    const cache = (typeof App !== 'undefined' ? App.state.homeDigest : null);
+    digestEl.innerHTML = renderDigestCard(cache, { pendingCount, overdueCount });
+  }
+
+  // Today's pending tasks (urgent first via shared sort)
   const todayTasks = sortByDateTime(
     teamOnly.filter(t => getComputedStatus(t) === 'pending' && formatDate(t.dueDate) === 'Today'),
     'asc'
@@ -478,6 +485,88 @@ function renderHomePage(tasks, nameMap = {}) {
   listEl.innerHTML = todayTasks.length
     ? `<div class="card-list">${todayTasks.map(t => taskCardHTML(t, nameMap)).join('')}</div>`
     : `<div class="empty-section">Nothing due today — tap the mic to assign a task</div>`;
+}
+
+// ── Daily digest card (LLM summary fetched via send-daily-digest Edge Function) ─
+function renderDigestCard(state, counts) {
+  // state shape: null | { summary, todayCount, overdueCount, urgentCount, generatedAt, loading, error }
+  const greeting = digestGreeting();
+
+  if (!state) {
+    return `
+      <div class="digest-card digest-card--loading">
+        <p class="digest-greeting">${escapeHTML(greeting)}, ${escapeHTML(digestFirstName())}.</p>
+        <p class="digest-body digest-body--loading">Reading the day…</p>
+      </div>
+    `;
+  }
+
+  if (state.loading) {
+    return `
+      <div class="digest-card digest-card--loading">
+        <p class="digest-greeting">${escapeHTML(greeting)}, ${escapeHTML(digestFirstName())}.</p>
+        <p class="digest-body digest-body--loading">Reading the day…</p>
+      </div>
+    `;
+  }
+
+  // Fallback summary if Groq is unreachable: build from counts
+  let body = state.summary;
+  if (!body) {
+    const c = counts || { pendingCount: 0, overdueCount: 0 };
+    if ((c.pendingCount || 0) === 0 && (c.overdueCount || 0) === 0) {
+      body = 'Nothing on deck. Quiet day.';
+    } else {
+      body = `${c.pendingCount} pending${c.overdueCount ? `, ${c.overdueCount} overdue` : ''}.`;
+    }
+  }
+
+  const ageLine = state.generatedAt
+    ? `<span class="digest-meta">${escapeHTML(formatRelativeAge(state.generatedAt))}</span>`
+    : '';
+
+  return `
+    <div class="digest-card">
+      <p class="digest-greeting">${escapeHTML(greeting)}, ${escapeHTML(digestFirstName())}.</p>
+      <p class="digest-body">${escapeHTML(body)}</p>
+      <div class="digest-footer">
+        ${ageLine}
+        <button id="home-digest-refresh" class="digest-refresh" type="button" aria-label="Refresh briefing">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="12" height="12">
+            <polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/>
+            <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+          </svg>
+          Refresh
+        </button>
+      </div>
+    </div>
+  `;
+}
+
+function digestGreeting() {
+  const h = new Date().getHours();
+  if (h < 5)  return 'Late night';
+  if (h < 12) return 'Morning';
+  if (h < 17) return 'Afternoon';
+  if (h < 21) return 'Evening';
+  return 'Night';
+}
+
+function digestFirstName() {
+  const full = (Auth.profile?.full_name || '').trim();
+  if (!full) return 'there';
+  return full.split(/\s+/)[0];
+}
+
+function formatRelativeAge(iso) {
+  try {
+    const then = new Date(iso).getTime();
+    const diffMin = Math.floor((Date.now() - then) / 60000);
+    if (diffMin < 1)   return 'just now';
+    if (diffMin < 60)  return `${diffMin}m ago`;
+    if (diffMin < 1440) return `${Math.floor(diffMin / 60)}h ago`;
+    return `${Math.floor(diffMin / 1440)}d ago`;
+  } catch { return ''; }
 }
 
 // ── Tasks page renderer (assigner: segmented filter + grouped by person) ──────

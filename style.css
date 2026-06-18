@@ -347,6 +347,53 @@ body::before {
 }
 .big-subtitle { font-size: 15px; color: var(--muted); margin-top: 2px; }
 
+/* AI Daily Digest card — sits at the top of Home */
+.home-digest { padding: 0 2px; }
+.digest-card {
+  background: linear-gradient(135deg, var(--primary-soft, #f3f0ff) 0%, white 100%);
+  border: 1px solid var(--border, #e3e4e8);
+  border-radius: 14px;
+  padding: 14px 16px 12px;
+  box-shadow: var(--shadow-card);
+  display: flex; flex-direction: column; gap: 6px;
+}
+.digest-card--loading { opacity: 0.85; }
+.digest-greeting {
+  font-size: 14px; font-weight: 600;
+  color: var(--muted);
+  margin: 0;
+}
+.digest-body {
+  font-size: 15px; line-height: 1.45;
+  color: var(--text);
+  margin: 0;
+  font-style: normal;
+}
+.digest-body--loading {
+  color: var(--muted);
+  font-style: italic;
+}
+.digest-footer {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-top: 4px;
+}
+.digest-meta {
+  font-size: 11px; color: var(--muted);
+}
+.digest-refresh {
+  display: inline-flex; align-items: center; gap: 4px;
+  background: none; border: none;
+  color: var(--primary, #5a67d8);
+  font-size: 12px; font-weight: 600;
+  cursor: pointer;
+  padding: 4px 6px; margin: -4px -6px;
+  border-radius: 6px;
+  transition: background 0.15s;
+}
+.digest-refresh:hover { background: rgba(0,0,0,0.04); }
+.digest-refresh:active { background: rgba(0,0,0,0.08); }
+.digest-refresh svg { flex-shrink: 0; }
+
 .summary-chips { display: flex; gap: 8px; flex-wrap: wrap; padding: 0 2px; }
 .stat-chip {
   display: inline-flex; align-items: center; gap: 7px;

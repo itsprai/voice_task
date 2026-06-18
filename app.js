@@ -36,6 +36,8 @@ const App = {
       try { return JSON.parse(localStorage.getItem('vtm_v2_pinned_assigners') || '[]'); } catch { return []; }
     })(),
     assigneePinMode: false,
+    // AI daily digest for the manager Home page — { summary, todayCount, overdueCount, urgentCount, generatedAt, loading?, error? }
+    homeDigest: null,
     // Invite token from URL (set before auth resolves)
     pendingInviteToken: null
   },
@@ -121,6 +123,12 @@ const App = {
       if (dayPill) {
         e.preventDefault();
         dayPill.classList.toggle('is-on');
+        return;
+      }
+
+      // Home page — refresh the AI daily digest
+      if (e.target.closest('#home-digest-refresh')) {
+        this._refreshHomeDigest({ force: true });
         return;
       }
     });
@@ -1667,7 +1675,11 @@ const App = {
   // ── Page refresh helpers ───────────────────────────────────────────────────
   _refreshCurrentPage() {
     if (Auth.profile?.role === 'assigner') {
-      if (this.state.currentPage === 'home')     renderHomePage(this.state.tasks, this.state.nameMap);
+      if (this.state.currentPage === 'home') {
+        renderHomePage(this.state.tasks, this.state.nameMap);
+        // Kick off the AI digest on first Home render of the day; cached visits are instant.
+        this._refreshHomeDigest();
+      }
       if (this.state.currentPage === 'tasks')    renderTaskPage(this.state.tasks, this.state.nameMap);
       if (this.state.currentPage === 'pipeline') this._renderPipeline();
       this._updatePipelineBadge();
@@ -1675,6 +1687,77 @@ const App = {
       renderAssigneeTasksPage(this.state.tasks, this.state.assigners, this.state.editingAssigneeTaskId);
       this._updateAssigneeBadge();
     }
+  },
+
+  // ── AI Daily Digest (Home page) ────────────────────────────────────────────
+  // Calls send-daily-digest Edge Function in preview mode. Caches the response
+  // per local-day in localStorage so repeated Home visits don't re-bill Groq.
+  // Tap the Refresh link or call with {force:true} to regenerate.
+  async _refreshHomeDigest(opts = {}) {
+    const dayKey = new Date().toISOString().split('T')[0];
+    const cacheKey = `vtm_v2_digest_${dayKey}`;
+
+    if (!opts.force) {
+      // Hydrate from localStorage if we already have today's digest
+      if (!this.state.homeDigest) {
+        try {
+          const cached = localStorage.getItem(cacheKey);
+          if (cached) this.state.homeDigest = JSON.parse(cached);
+        } catch {}
+      }
+      // Already have something usable — paint it and bail
+      if (this.state.homeDigest?.summary) {
+        this._paintHomeDigest();
+        return;
+      }
+    }
+
+    if (!SupabaseClient || !Auth.profile) return;
+
+    // Loading state
+    this.state.homeDigest = { ...(this.state.homeDigest || {}), loading: true };
+    this._paintHomeDigest();
+
+    try {
+      const { data, error } = await SupabaseClient.functions.invoke('send-daily-digest', {
+        body: { mode: 'preview' }
+      });
+      if (error) throw error;
+
+      const next = {
+        summary:      data?.summary || null,
+        todayCount:   data?.todayCount ?? 0,
+        overdueCount: data?.overdueCount ?? 0,
+        urgentCount:  data?.urgentCount ?? 0,
+        generatedAt:  data?.generatedAt || new Date().toISOString(),
+        loading:      false
+      };
+      this.state.homeDigest = next;
+      try { localStorage.setItem(cacheKey, JSON.stringify(next)); } catch {}
+    } catch (err) {
+      console.warn('[Home] digest fetch failed:', err);
+      this.state.homeDigest = {
+        ...(this.state.homeDigest || {}),
+        loading: false,
+        error: err.message || 'Could not fetch briefing'
+      };
+    }
+
+    this._paintHomeDigest();
+  },
+
+  // Re-render only the digest card without re-rendering the rest of Home
+  _paintHomeDigest() {
+    if (this.state.currentPage !== 'home') return;
+    const el = document.getElementById('home-digest');
+    if (!el) return;
+    const myId = Auth.profile?.id;
+    const teamOnly = this.state.tasks.filter(t => !isPersonalTask(t, myId));
+    const counts = {
+      pendingCount: teamOnly.filter(t => ['pending', 'future'].includes(getComputedStatus(t))).length,
+      overdueCount: teamOnly.filter(t => getComputedStatus(t) === 'overdue').length
+    };
+    el.innerHTML = renderDigestCard(this.state.homeDigest, counts);
   },
 
   _renderPipeline() {
