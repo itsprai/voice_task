@@ -444,7 +444,7 @@ function escapeHTML(str) {
 
 // ── Home page renderer (assigner: summary chips + today's tasks) ──────────────
 
-function renderHomePage(tasks, nameMap = {}) {
+function renderHomePage(tasks, nameMap = {}, team = []) {
   const chipsEl  = document.getElementById('home-chips');
   const listEl   = document.getElementById('home-tasks');
   const dateEl   = document.getElementById('home-date');
@@ -469,106 +469,139 @@ function renderHomePage(tasks, nameMap = {}) {
     <span class="stat-chip"><span class="stat-chip-dot stat-chip-dot--overdue"></span>Overdue ${overdueCount}</span>
   `;
 
-  // Today's highlights — per-person summary cards. The AI summaries live on
-  // App.state.homeDigest.perPerson (populated by _refreshHomeDigest). We still
-  // compute counts locally so the chip line is always accurate even before the
-  // LLM call finishes (or if it fails).
-  const relevant = tasks.filter(t => {
-    // Only tasks this manager assigned (includes their own personal tasks)
-    if (t.assigner_id !== myId) return false;
-    const s = getComputedStatus(t);
-    if (s === 'overdue') return true;
-    if (s === 'pending' && formatDate(t.dueDate) === 'Today') return true;
-    return false;
+  // Per-person stat tiles — one card per team member (+ Me). Each card shows:
+  // overdue · today (open) · yesterday completed · last completed (title + time).
+  // Cards with zero history show a friendly "No task assigned" line.
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const yesterday = new Date(today); yesterday.setDate(today.getDate() - 1);
+
+  const meEntry  = { id: myId, full_name: 'Me', _isMe: true };
+  const allPeople = [meEntry, ...team];
+
+  const people = allPeople.map(p => {
+    const isMe = !!p._isMe;
+    // Tasks this manager assigned to this person (personal for Me, delegated for others)
+    const personTasks = tasks.filter(t => {
+      if (t.assigner_id !== myId) return false;
+      return isMe ? t.assignee_id === myId : t.assignee_id === p.id;
+    });
+
+    let overdue = 0, todayCnt = 0, yesterdayCompleted = 0;
+    let lastCompleted = null;
+    for (const t of personTasks) {
+      const due = parseDate(t.dueDate);
+      if (t.status !== 'completed' && due) {
+        if (due.getTime() < today.getTime())              overdue++;
+        else if (due.getTime() === today.getTime())       todayCnt++;
+      }
+      if (t.status === 'completed' && t.updatedAt) {
+        const upd = new Date(t.updatedAt);
+        if (!isNaN(upd)) {
+          const updDay = new Date(upd); updDay.setHours(0, 0, 0, 0);
+          if (updDay.getTime() === yesterday.getTime()) yesterdayCompleted++;
+          if (!lastCompleted || new Date(lastCompleted.updatedAt) < upd) lastCompleted = t;
+        }
+      }
+    }
+
+    return {
+      id: p.id,
+      name: isMe ? 'Me' : p.full_name,
+      isMe,
+      hasAnyTask: personTasks.length > 0,
+      counts: { overdue, today: todayCnt, yesterdayCompleted },
+      lastCompleted
+    };
   });
 
-  if (!relevant.length) {
-    listEl.innerHTML = `<div class="empty-section">Nothing on deck today — tap the mic to assign one</div>`;
-    return;
-  }
-
-  // Local count by assignee
-  const byPerson = new Map();
-  for (const t of relevant) {
-    const key = t.assignee_id || myId;
-    if (!byPerson.has(key)) byPerson.set(key, { today: 0, overdue: 0, urgent: 0, total: 0 });
-    const b = byPerson.get(key);
-    b.total++;
-    const s = getComputedStatus(t);
-    if (s === 'overdue') b.overdue++;
-    if (s === 'pending' && formatDate(t.dueDate) === 'Today') b.today++;
-    if (t.priority === 'urgent' && s === 'pending' && formatDate(t.dueDate) === 'Today') b.urgent++;
-  }
-
-  // Map server-side summaries (if any) by id for quick lookup
-  const aiSummaries = (typeof App !== 'undefined' && App.state.homeDigest?.perPerson)
-    ? Object.fromEntries(App.state.homeDigest.perPerson.map(p => [p.id, p.summary]))
-    : {};
-
-  // Sort people: most pressing first (overdue desc, urgent desc, total desc)
-  const personEntries = Array.from(byPerson.entries()).map(([id, counts]) => ({
-    id,
-    name: id === myId ? 'Me' : (nameMap[id] || 'Unknown'),
-    counts,
-    summary: aiSummaries[id] || ''
-  })).sort((a, b) => {
+  // Me first, then by pressure (overdue desc → today desc → name asc)
+  people.sort((a, b) => {
+    if (a.isMe !== b.isMe) return a.isMe ? -1 : 1;
     if (a.counts.overdue !== b.counts.overdue) return b.counts.overdue - a.counts.overdue;
-    if (a.counts.urgent  !== b.counts.urgent)  return b.counts.urgent  - a.counts.urgent;
-    return b.counts.total - a.counts.total;
+    if (a.counts.today   !== b.counts.today)   return b.counts.today   - a.counts.today;
+    return a.name.localeCompare(b.name);
   });
-
-  // Has the LLM call resolved yet? (`generatedAt` is only set after a successful fetch)
-  const digestReady = !!(typeof App !== 'undefined' && App.state.homeDigest?.generatedAt);
-  const ageLine = digestReady
-    ? `<span class="home-highlights-age">${escapeHTML(formatRelativeAge(App.state.homeDigest.generatedAt))}</span>`
-    : '';
 
   listEl.innerHTML = `
-    <div class="home-highlights-bar">
-      <span class="home-highlights-heading">Today's highlights</span>
-      <span class="home-highlights-actions">
-        ${ageLine}
-        <button id="home-digest-refresh" class="home-highlights-refresh" type="button" aria-label="Refresh insights">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="12" height="12">
-            <polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/>
-            <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
-          </svg>
-        </button>
-      </span>
-    </div>
-    <div class="home-highlights">
-      ${personEntries.map(p => homePersonBlock(p, myId)).join('')}
+    <div class="home-people-grid">
+      ${people.map(p => homePersonBoxHTML(p)).join('')}
     </div>
   `;
 }
 
-// Render one person's summary card: name + count parts + AI summary + Show all
-function homePersonBlock(person, myId) {
-  const isMe = person.id === myId;
-  const showAllAttrs = isMe ? '' : `data-person-id="${person.id}"`;
+// One stat box for the Home page grid. Tap → that person's Pipeline tab.
+function homePersonBoxHTML(person) {
+  if (!person.hasAnyTask) {
+    return `
+      <button class="home-person-box home-person-box--empty" data-person-id="${person.id}" type="button">
+        <div class="home-person-name">${escapeHTML(person.name)}</div>
+        <div class="home-person-empty">No task assigned</div>
+      </button>
+    `;
+  }
 
-  const countParts = [];
-  if (person.counts.today)   countParts.push(`${person.counts.today} today`);
-  if (person.counts.overdue) countParts.push(`<span class="home-person-overdue">${person.counts.overdue} overdue</span>`);
-  if (person.counts.urgent)  countParts.push(`<span class="home-person-urgent">${person.counts.urgent} urgent</span>`);
-  const countLine = countParts.join(' · ');
-
-  const body = person.summary
-    ? `<p class="home-person-summary">${escapeHTML(person.summary)}</p>`
-    : `<p class="home-person-summary home-person-summary--loading">Reading the day…</p>`;
+  const { overdue, today, yesterdayCompleted } = person.counts;
+  const last = person.lastCompleted;
+  const lastHTML = last
+    ? `<div class="home-person-last">
+         <span class="home-person-last-label">Last completed</span>
+         <span class="home-person-last-title">${escapeHTML(last.description)}</span>
+         <span class="home-person-last-time">${escapeHTML(formatCompletedAt(last.updatedAt))}</span>
+       </div>`
+    : `<div class="home-person-last home-person-last--none">
+         <span class="home-person-last-label">Last completed</span>
+         <span class="home-person-last-title">—</span>
+       </div>`;
 
   return `
-    <div class="home-person-block">
-      <div class="home-person-row">
-        <span class="home-person-name">${escapeHTML(person.name)}</span>
-        <span class="home-person-counts">${countLine}</span>
+    <button class="home-person-box" data-person-id="${person.id}" type="button">
+      <div class="home-person-name">${escapeHTML(person.name)}</div>
+      <div class="home-person-stats">
+        <div class="home-person-stat ${overdue > 0 ? 'home-person-stat--alert' : ''}">
+          <span class="home-person-stat-label">Overdue</span>
+          <span class="home-person-stat-value">${overdue}</span>
+        </div>
+        <div class="home-person-stat ${today > 0 ? 'home-person-stat--today' : ''}">
+          <span class="home-person-stat-label">Today</span>
+          <span class="home-person-stat-value">${today}</span>
+        </div>
+        <div class="home-person-stat">
+          <span class="home-person-stat-label">Yesterday</span>
+          <span class="home-person-stat-value">${yesterdayCompleted}</span>
+        </div>
       </div>
-      ${body}
-      <button class="home-person-showall" type="button" ${showAllAttrs}>
-        Show all ${person.counts.total} <span aria-hidden="true">→</span>
-      </button>
-    </div>
+      ${lastHTML}
+    </button>
   `;
+}
+
+// Friendly relative time for "Last completed" line on home person boxes.
+// "Just now" / "Nm ago" / "Nh ago" / "Yesterday H:MM AM/PM" / weekday / "Mon DD".
+function formatCompletedAt(iso) {
+  try {
+    const then = new Date(iso);
+    if (isNaN(then)) return '';
+    const now = new Date();
+    const diffMin = Math.floor((now - then) / 60000);
+    if (diffMin < 1)  return 'Just now';
+    if (diffMin < 60) return `${diffMin}m ago`;
+
+    const thenDay = new Date(then); thenDay.setHours(0, 0, 0, 0);
+    const today   = new Date(now);  today.setHours(0, 0, 0, 0);
+    const diffDays = Math.round((today - thenDay) / 86400000);
+
+    if (diffDays === 0) return `${Math.floor(diffMin / 60)}h ago`;
+    if (diffDays === 1) {
+      const h = then.getHours(), m = then.getMinutes();
+      const h12 = h % 12 || 12;
+      const ampm = h >= 12 ? 'PM' : 'AM';
+      return `Yesterday ${h12}:${String(m).padStart(2, '0')} ${ampm}`;
+    }
+    if (diffDays >= 2 && diffDays <= 6) {
+      return then.toLocaleDateString('en-US', { weekday: 'short' });
+    }
+    return then.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  } catch { return ''; }
 }
 
 // ── Daily digest card (LLM summary fetched via send-daily-digest Edge Function) ─

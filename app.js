@@ -138,6 +138,13 @@ const App = {
         this.navigateTo('pipeline', { personId: showAll.dataset.personId, keepState: true });
         return;
       }
+
+      // Home page — tap a person box → open their Team-page tab
+      const personBox = e.target.closest('.home-person-box[data-person-id]');
+      if (personBox) {
+        this.navigateTo('pipeline', { personId: personBox.dataset.personId, keepState: true });
+        return;
+      }
     });
 
     document.body.addEventListener('change', async e => {
@@ -587,7 +594,7 @@ const App = {
     this.state.currentPage = page;
     localStorage.setItem('vtm_v2_page', page);
 
-    if (page === 'home')  renderHomePage(this.state.tasks, this.state.nameMap);
+    if (page === 'home')  renderHomePage(this.state.tasks, this.state.nameMap, this.state.team);
     if (page === 'tasks') renderTaskPage(this.state.tasks, this.state.nameMap);
 
     if (page === 'pipeline') {
@@ -1683,7 +1690,7 @@ const App = {
   _refreshCurrentPage() {
     if (Auth.profile?.role === 'assigner') {
       if (this.state.currentPage === 'home') {
-        renderHomePage(this.state.tasks, this.state.nameMap);
+        renderHomePage(this.state.tasks, this.state.nameMap, this.state.team);
         // Kick off the AI digest on first Home render of the day; cached visits are instant.
         this._refreshHomeDigest();
       }
@@ -1760,7 +1767,7 @@ const App = {
     if (this.state.currentPage !== 'home') return;
     // The full re-render is needed because perPerson summaries now live on
     // App.state.homeDigest.perPerson and feed into homePersonBlock(...).
-    renderHomePage(this.state.tasks, this.state.nameMap);
+    renderHomePage(this.state.tasks, this.state.nameMap, this.state.team);
   },
 
   _renderPipeline() {
