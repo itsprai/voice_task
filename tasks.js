@@ -568,6 +568,7 @@ function homePersonBoxHTML(person) {
       <div class="home-person-header">
         <span class="home-person-avatar">${escapeHTML(initial)}</span>
         <span class="home-person-name">${escapeHTML(person.name)}</span>
+        <span class="home-person-status-dot" aria-hidden="true"></span>
       </div>
       <div class="home-person-stats">
         <div class="home-stat-tile ${overdue > 0 ? 'home-stat-tile--alert' : ''}">
@@ -580,7 +581,7 @@ function homePersonBoxHTML(person) {
         </div>
         <div class="home-stat-tile">
           <span class="home-stat-num">${yesterdayCompleted}</span>
-          <span class="home-stat-lbl">Yesterday</span>
+          <span class="home-stat-lbl">Yest.</span>
         </div>
       </div>
       ${lastHTML}
