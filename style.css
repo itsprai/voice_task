@@ -1215,6 +1215,31 @@ body::before {
 }
 .settings-signout-btn:active { background: var(--danger-soft); }
 
+.settings-refresh-btn {
+  width: 100%;
+  padding: 12px 14px;
+  background: white;
+  color: var(--primary, #5a67d8);
+  border: none;
+  border-radius: var(--radius-card);
+  font-family: inherit;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: var(--shadow-card);
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  transition: background 0.18s, opacity 0.18s;
+}
+.settings-refresh-btn:active   { background: var(--primary-soft, #f0f0fb); }
+.settings-refresh-btn:disabled { opacity: 0.6; cursor: default; }
+.settings-refresh-sub {
+  margin: 6px 2px 0;
+  font-size: 12px;
+  color: var(--muted);
+  text-align: center;
+  line-height: 1.4;
+}
+
 /* ─── Bottom sheets (invite / add task) ──────────────────────────────── */
 .sheet-backdrop {
   position: absolute;

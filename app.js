@@ -83,6 +83,10 @@ const App = {
         this._showScreen('auth');
         return;
       }
+      if (e.target.closest('#settings-refresh-btn')) {
+        await this._refreshApp();
+        return;
+      }
 
       // Tap the notes preview row on a task card to expand/collapse full text
       const notesPrev = e.target.closest('.task-notes-preview');
@@ -349,9 +353,42 @@ const App = {
           </div>
         </div>
 
+        <div class="settings-section">
+          <button id="settings-refresh-btn" class="settings-refresh-btn" type="button">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="16" height="16">
+              <polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/>
+              <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+            </svg>
+            Refresh app
+          </button>
+          <p class="settings-refresh-sub">Fetch the latest version without removing the app from your home screen</p>
+        </div>
+
         <button id="settings-signout-btn" class="settings-signout-btn">Sign out</button>
       </div>
     `;
+  },
+
+  // Hard-refresh: clear browser caches + reload. Lets the user pull the latest
+  // build without deleting the PWA from their home screen.
+  async _refreshApp() {
+    const btn = document.getElementById('settings-refresh-btn');
+    if (btn) { btn.disabled = true; btn.textContent = 'Refreshing…'; }
+    try {
+      if ('caches' in window) {
+        const keys = await caches.keys();
+        await Promise.all(keys.map(k => caches.delete(k)));
+      }
+      if ('serviceWorker' in navigator) {
+        const regs = await navigator.serviceWorker.getRegistrations();
+        await Promise.all(regs.map(r => r.update().catch(() => {})));
+      }
+    } catch (err) {
+      console.warn('[Refresh] cleanup failed:', err);
+    }
+    // Force a fresh fetch via cache-bust query on the document URL
+    const sep = location.search ? '&' : '?';
+    location.href = location.pathname + location.search + sep + '_=' + Date.now();
   },
 
   async _loadSettingsState() {
