@@ -581,8 +581,26 @@ const App = {
       ]);
 
       if (tasks)  {
-        this.state.tasks = tasks;
-        localStorage.setItem(CONFIG.STORAGE_KEY, JSON.stringify(tasks));
+        // Merge-by-updatedAt: a pull can race a still-debouncing push (most
+        // common on mobile when a checkbox tap fires Storage.update right
+        // before a Realtime event or visibilitychange triggers _pullAll).
+        // If the local row has a newer updatedAt than the server row, the
+        // optimistic update hasn't synced yet — keep local. Otherwise take
+        // server. Also retain any local-only rows the server hasn't received.
+        const local      = Storage.load();
+        const localById  = new Map(local.map(t => [t.id, t]));
+        const merged     = tasks.map(server => {
+          const lt = localById.get(server.id);
+          if (!lt) return server;
+          const lts = lt.updatedAt     ? new Date(lt.updatedAt).getTime()     : 0;
+          const sts = server.updatedAt ? new Date(server.updatedAt).getTime() : 0;
+          return lts > sts ? lt : server;
+        });
+        const serverIds = new Set(tasks.map(t => t.id));
+        const localOnly = local.filter(t => !serverIds.has(t.id));
+        const finalTasks = [...merged, ...localOnly];
+        this.state.tasks = finalTasks;
+        localStorage.setItem(CONFIG.STORAGE_KEY, JSON.stringify(finalTasks));
       }
       if (team) {
         if (Auth.profile?.role === 'assigner') {
