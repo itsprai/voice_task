@@ -571,17 +571,17 @@ function homePersonBoxHTML(person) {
         <span class="home-person-status-dot" aria-hidden="true"></span>
       </div>
       <div class="home-person-stats">
-        <div class="home-stat-tile ${overdue > 0 ? 'home-stat-tile--alert' : ''}">
-          <span class="home-stat-num">${overdue}</span>
+        <div class="home-stat-row">
           <span class="home-stat-lbl">Overdue</span>
+          <span class="home-stat-num">${overdue}</span>
         </div>
-        <div class="home-stat-tile ${today > 0 ? 'home-stat-tile--today' : ''}">
-          <span class="home-stat-num">${today}</span>
+        <div class="home-stat-row">
           <span class="home-stat-lbl">Today</span>
+          <span class="home-stat-num">${today}</span>
         </div>
-        <div class="home-stat-tile">
+        <div class="home-stat-row">
+          <span class="home-stat-lbl">Yesterday</span>
           <span class="home-stat-num">${yesterdayCompleted}</span>
-          <span class="home-stat-lbl">Yest.</span>
         </div>
       </div>
       ${lastHTML}

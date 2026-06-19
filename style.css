@@ -552,33 +552,31 @@ body::before {
 .home-person-box[data-accent="today"] .home-person-status-dot { background: var(--primary); }
 .home-person-box[data-accent="calm"]  .home-person-status-dot { background: var(--success); }
 
-/* Stat tiles — clean number + label, no backgrounds */
+/* Stats — vertical list rows, label left + number right, no color emphasis */
 .home-person-stats {
-  display: grid;
-  grid-template-columns: 1fr 1fr 1fr;
-  gap: 10px;
-}
-.home-stat-tile {
   display: flex; flex-direction: column;
-  gap: 4px;
-  min-width: 0;
+  gap: 6px;
 }
-.home-stat-num {
-  font-size: 22px; font-weight: 700;
-  color: var(--text);
-  font-variant-numeric: tabular-nums;
-  line-height: 1;
-  letter-spacing: -0.02em;
+.home-stat-row {
+  display: flex; align-items: baseline; justify-content: space-between;
+  gap: 8px;
 }
 .home-stat-lbl {
-  font-size: 11px;
+  font-size: 13px;
   color: var(--muted);
   font-weight: 500;
   letter-spacing: -0.005em;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  min-width: 0;
 }
-.home-stat-tile--alert .home-stat-num { color: var(--danger); }
-.home-stat-tile--today .home-stat-num { color: var(--primary); }
+.home-stat-num {
+  font-size: 15px; font-weight: 700;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  letter-spacing: -0.01em;
+  flex-shrink: 0;
+}
 
 /* Last completed footer */
 .home-person-last {
