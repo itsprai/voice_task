@@ -13,16 +13,33 @@ const Invite = {
     return new URLSearchParams(window.location.search).get('invite') || null;
   },
 
-  // ── Fetch invite data by token (anon-readable) ────────────────────────────
+  // ── Fetch invite data by token ────────────────────────────────────────────
+  // Calls the SECURITY DEFINER function get_invite() — the invites table no
+  // longer allows direct SELECT for anon, so this controlled function is the
+  // only way to read an invite by its token.
   async fetchByToken(token) {
-    if (!SupabaseClient) return null;
+    if (!SupabaseClient || !token) return null;
     const { data, error } = await SupabaseClient
-      .from('invites')
-      .select('id, name, email, status, assigner_id, assigner:assigner_id(full_name)')
-      .eq('token', token)
-      .single();
+      .rpc('get_invite', { _token: token });
     if (error || !data) return null;
-    return data;
+    // rpc returns the invite row directly (function is SETOF-less, returns
+    // a single composite row). Older Supabase JS clients sometimes wrap in
+    // array — handle both shapes defensively.
+    const invite = Array.isArray(data) ? data[0] : data;
+    if (!invite) return null;
+
+    // The old query joined assigner_id → profiles.full_name. RPC can't do
+    // joins, so fetch the manager's name separately. Profile reads are
+    // already permitted to authenticated users via profiles_team_read.
+    if (invite.assigner_id) {
+      const { data: prof } = await SupabaseClient
+        .from('profiles')
+        .select('full_name')
+        .eq('id', invite.assigner_id)
+        .single();
+      invite.assigner = prof ? { full_name: prof.full_name } : null;
+    }
+    return invite;
   },
 
   // ── Assigner: create a new invite and return the shareable link ───────────
