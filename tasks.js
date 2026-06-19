@@ -457,11 +457,13 @@ function renderHomePage(tasks, nameMap = {}, team = []) {
   if (!chipsEl || !listEl) return;
 
   const myId = Auth.profile?.id;
-  const teamOnly = tasks.filter(t => !isPersonalTask(t, myId));
+  // Aggregate stats cover EVERYTHING the manager is involved in — both
+  // delegated tasks AND their own personal (Me) tasks.
+  const allMine = tasks.filter(t => t.assigner_id === myId);
 
-  const pendingCount = teamOnly.filter(t => ['pending', 'future'].includes(getComputedStatus(t))).length;
-  const doneCount    = teamOnly.filter(t => getComputedStatus(t) === 'completed').length;
-  const overdueCount = teamOnly.filter(t => getComputedStatus(t) === 'overdue').length;
+  const pendingCount = allMine.filter(t => ['pending', 'future'].includes(getComputedStatus(t))).length;
+  const doneCount    = allMine.filter(t => getComputedStatus(t) === 'completed').length;
+  const overdueCount = allMine.filter(t => getComputedStatus(t) === 'overdue').length;
 
   chipsEl.innerHTML = `
     <span class="stat-chip"><span class="stat-chip-dot stat-chip-dot--pending"></span>Pending ${pendingCount}</span>
@@ -531,11 +533,15 @@ function renderHomePage(tasks, nameMap = {}, team = []) {
 
 // One stat box for the Home page grid. Tap → that person's Pipeline tab.
 function homePersonBoxHTML(person) {
+  const initial = (person.name.trim()[0] || '?').toUpperCase();
+  const meClass = person.isMe ? ' home-person-box--me' : '';
+
   if (!person.hasAnyTask) {
     return `
-      <button class="home-person-box home-person-box--empty" data-person-id="${person.id}" type="button">
-        <div class="home-person-name">${escapeHTML(person.name)}</div>
-        <div class="home-person-empty">No task assigned</div>
+      <button class="home-person-box home-person-box--empty${meClass}" data-person-id="${person.id}" type="button">
+        <span class="home-person-avatar home-person-avatar--muted">${escapeHTML(initial)}</span>
+        <span class="home-person-name">${escapeHTML(person.name)}</span>
+        <span class="home-person-empty">No tasks assigned</span>
       </button>
     `;
   }
@@ -553,21 +559,28 @@ function homePersonBoxHTML(person) {
          <span class="home-person-last-title">—</span>
        </div>`;
 
+  // Accent stripe: red when there's overdue work, primary when today has work,
+  // muted otherwise. Driven by data-attribute the CSS reads via ::before.
+  const accent = overdue > 0 ? 'alert' : (today > 0 ? 'today' : 'calm');
+
   return `
-    <button class="home-person-box" data-person-id="${person.id}" type="button">
-      <div class="home-person-name">${escapeHTML(person.name)}</div>
+    <button class="home-person-box${meClass}" data-person-id="${person.id}" data-accent="${accent}" type="button">
+      <div class="home-person-header">
+        <span class="home-person-avatar">${escapeHTML(initial)}</span>
+        <span class="home-person-name">${escapeHTML(person.name)}</span>
+      </div>
       <div class="home-person-stats">
-        <div class="home-person-stat ${overdue > 0 ? 'home-person-stat--alert' : ''}">
-          <span class="home-person-stat-label">Overdue</span>
-          <span class="home-person-stat-value">${overdue}</span>
+        <div class="home-stat-tile ${overdue > 0 ? 'home-stat-tile--alert' : ''}">
+          <span class="home-stat-num">${overdue}</span>
+          <span class="home-stat-lbl">Overdue</span>
         </div>
-        <div class="home-person-stat ${today > 0 ? 'home-person-stat--today' : ''}">
-          <span class="home-person-stat-label">Today</span>
-          <span class="home-person-stat-value">${today}</span>
+        <div class="home-stat-tile ${today > 0 ? 'home-stat-tile--today' : ''}">
+          <span class="home-stat-num">${today}</span>
+          <span class="home-stat-lbl">Today</span>
         </div>
-        <div class="home-person-stat">
-          <span class="home-person-stat-label">Yesterday</span>
-          <span class="home-person-stat-value">${yesterdayCompleted}</span>
+        <div class="home-stat-tile">
+          <span class="home-stat-num">${yesterdayCompleted}</span>
+          <span class="home-stat-lbl">Yesterday</span>
         </div>
       </div>
       ${lastHTML}
