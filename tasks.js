@@ -400,6 +400,19 @@ function readCustomRuleFromForm(idPrefix) {
   return normalizeRecurrenceRule({ interval, unit, byDays, endType, endDate, endCount });
 }
 
+// Render an attached-image thumbnail on a task card. Tap → opens full viewer
+// (handled by a delegated click listener on body in app.js). Returns empty
+// string when the task has no image attached.
+function taskImageThumbHTML(task) {
+  const url = task?.image_url;
+  if (!url) return '';
+  return `
+    <button class="task-image-thumb" type="button" data-full-url="${escapeHTML(url)}" aria-label="View image">
+      <img src="${escapeHTML(url)}" alt="Task image" loading="lazy"/>
+    </button>
+  `;
+}
+
 // Build a new subtask-edit-row DOM node (used when user clicks + Add or after AI break-down).
 function makeSubtaskRow(text = '', done = false) {
   const row = document.createElement('div');
@@ -783,6 +796,7 @@ function taskCardHTML(task, nameMap = {}, opts = {}) {
       <div class="task-body">
         <div class="task-desc ${isCompleted ? 'task-desc--done' : ''}">${urgentMark}${escapeHTML(task.description)}${progressBadge}</div>
         ${metaParts.length ? `<div class="task-date ${dateClass}">${metaParts.map(escapeHTML).join(' · ')}</div>` : ''}
+        ${taskImageThumbHTML(task)}
         ${notesPreviewHTML(task)}
         ${subtasksHTML(task)}
         ${recurLabel ? `<div class="task-recur-chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="10" height="10"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>${escapeHTML(recurLabel)}</div>` : ''}

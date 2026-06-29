@@ -113,6 +113,7 @@ const Sync = {
       priority:        task.priority        ?? 'normal',
       notes:           task.notes           ?? '',
       subtasks:        Array.isArray(task.subtasks) ? task.subtasks : [],
+      image_url:       task.image_url       ?? null,
       createdAt:   task.createdAt   ?? new Date().toISOString(),
       updatedAt:   new Date().toISOString()
     };

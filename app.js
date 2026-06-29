@@ -130,6 +130,26 @@ const App = {
         return;
       }
 
+      // Open the image viewer when a task-card thumbnail is tapped
+      const thumb = e.target.closest('.task-image-thumb');
+      if (thumb) {
+        const viewer = document.getElementById('image-viewer');
+        const img    = document.getElementById('image-viewer-img');
+        if (viewer && img) {
+          img.src = thumb.dataset.fullUrl || thumb.querySelector('img')?.src || '';
+          viewer.classList.remove('hidden');
+        }
+        return;
+      }
+      // Close the image viewer (X button OR tap on backdrop)
+      if (e.target.id === 'image-viewer' || e.target.closest('#image-viewer-close')) {
+        const viewer = document.getElementById('image-viewer');
+        const img    = document.getElementById('image-viewer-img');
+        viewer?.classList.add('hidden');
+        if (img) img.src = '';
+        return;
+      }
+
       // Home page — refresh the AI daily digest
       if (e.target.closest('#home-digest-refresh')) {
         this._refreshHomeDigest({ force: true });
@@ -712,6 +732,7 @@ const App = {
       this._togglePipelineFAB(false);
       if (action === 'type')  this._openManagerTypeSheet();
       if (action === 'speak') this._startManagerSpeak();
+      if (action === 'image') this._pickImageForTask('pipeline');
     });
 
     document.getElementById('pipeline-fab-backdrop')?.addEventListener('click', () => {
@@ -784,6 +805,138 @@ const App = {
   _closeManagerTypeSheet() {
     const slot = document.getElementById('add-task-sheet-slot');
     if (slot) slot.innerHTML = '';
+  },
+
+  // ── Image-as-task flow (shared by Pipeline FAB + Assignee FAB) ────────────
+  //   role: 'pipeline' (manager → teammate) | 'assignee' (teammate → self attributed to active manager)
+  _pickImageForTask(role) {
+    const input = document.getElementById('image-task-input');
+    if (!input) return;
+    // Reset previous selection so picking the same file twice still triggers change
+    input.value = '';
+    // Re-bind onchange every time so the role from this call is captured fresh
+    input.onchange = (e) => {
+      const file = e.target.files?.[0];
+      if (file) this._uploadImageAsTask(file, role);
+    };
+    input.click();
+  },
+
+  async _uploadImageAsTask(file, role) {
+    const myId = Auth.profile?.id;
+    if (!myId) { this.showToast('Not signed in', true); return; }
+
+    if (!file.type.startsWith('image/')) {
+      this.showToast('Please pick an image', true);
+      return;
+    }
+
+    // Resolve assignee + assigner based on which FAB fired
+    let assigneeId, assignerId;
+    if (role === 'pipeline') {
+      // Manager is creating a task for the currently-active teammate (or self)
+      const pid = this.state.activePersonId;
+      if (!pid) { this.showToast('Pick a person first', true); return; }
+      assigneeId = pid;
+      assignerId = myId;
+    } else {
+      // Teammate adding their own task attributed to the currently-active manager
+      assigneeId = myId;
+      assignerId = this.state.activeAssignerId || myId;
+    }
+
+    this.showToast('Uploading image…');
+
+    try {
+      const compressed = await this._compressImage(file);
+      const ext  = 'jpg';
+      const path = `${myId}/${crypto.randomUUID()}.${ext}`;
+      const { error: upErr } = await SupabaseClient.storage
+        .from('task-images')
+        .upload(path, compressed, { contentType: 'image/jpeg', upsert: false });
+      if (upErr) throw upErr;
+
+      const { data: pub } = SupabaseClient.storage
+        .from('task-images')
+        .getPublicUrl(path);
+      const imageUrl = pub?.publicUrl;
+      if (!imageUrl) throw new Error('Could not resolve image URL');
+
+      const now    = new Date();
+      const _date  = now.toISOString().split('T')[0];
+      const _time  = now.toTimeString().slice(0, 5);
+      const member = assigneeId === myId
+        ? { id: myId, full_name: Auth.profile.full_name }
+        : this.state.team?.find(m => m.id === assigneeId);
+
+      const newTask = {
+        id:              crypto.randomUUID(),
+        raw:             '',
+        description:     'Photo',
+        assignee:        member?.full_name || '',
+        assignee_id:     assigneeId,
+        assigner_id:     assignerId,
+        added_by:        myId,
+        dueDate:         _date,
+        time:            _time,
+        dueAt:           new Date(`${_date}T${_time}`).getTime(),
+        status:          'pending',
+        recurrence:      'none',
+        recurrence_rule: null,
+        priority:        'normal',
+        notes:           '',
+        subtasks:        [],
+        image_url:       imageUrl,
+        createdAt:       now.toISOString(),
+        updatedAt:       now.toISOString()
+      };
+
+      this.state.tasks = Storage.add(newTask);
+      Notifications.scheduleLocal(newTask);
+      if (role === 'pipeline') {
+        Notifications.sendAssignmentPush(newTask);
+        this._renderPipeline?.();
+        this._updatePipelineBadge?.();
+      } else {
+        renderAssigneeTasksPage(this.state.tasks, this.state.assigners, this.state.editingAssigneeTaskId);
+        this._updateAssigneeBadge?.();
+      }
+      this.showToast('Image task added!');
+    } catch (err) {
+      console.warn('[Image task] upload failed:', err);
+      this.showToast(err.message || 'Could not upload image', true);
+    }
+  },
+
+  // Resize/compress an image File to ~max 1568px on the longest side, JPEG q85
+  _compressImage(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onerror = () => reject(new Error('Could not read image'));
+      reader.onload = () => {
+        const img = new Image();
+        img.onerror = () => reject(new Error('Could not decode image'));
+        img.onload = () => {
+          const maxDim = 1568;
+          let { width, height } = img;
+          if (width > maxDim || height > maxDim) {
+            const ratio = Math.min(maxDim / width, maxDim / height);
+            width  = Math.round(width  * ratio);
+            height = Math.round(height * ratio);
+          }
+          const canvas = document.createElement('canvas');
+          canvas.width = width; canvas.height = height;
+          canvas.getContext('2d').drawImage(img, 0, 0, width, height);
+          canvas.toBlob(
+            blob => blob ? resolve(blob) : reject(new Error('Compression failed')),
+            'image/jpeg',
+            0.85
+          );
+        };
+        img.src = reader.result;
+      };
+      reader.readAsDataURL(file);
+    });
   },
 
   async _submitManagerTypedTask() {
@@ -1666,6 +1819,8 @@ const App = {
       } else if (action === 'speak') {
         this.state.voiceContext = 'assignee-speak';
         this.voice.start();
+      } else if (action === 'image') {
+        this._pickImageForTask('assignee');
       }
     });
     document.getElementById('assignee-fab-backdrop')?.addEventListener('click', () => {

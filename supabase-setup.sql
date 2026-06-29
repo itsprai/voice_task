@@ -79,7 +79,8 @@ ALTER TABLE public.tasks
   ADD COLUMN IF NOT EXISTS recurrence_rule JSONB,
   ADD COLUMN IF NOT EXISTS priority        TEXT  NOT NULL DEFAULT 'normal',
   ADD COLUMN IF NOT EXISTS notes           TEXT  NOT NULL DEFAULT '',
-  ADD COLUMN IF NOT EXISTS subtasks        JSONB NOT NULL DEFAULT '[]'::jsonb;
+  ADD COLUMN IF NOT EXISTS subtasks        JSONB NOT NULL DEFAULT '[]'::jsonb,
+  ADD COLUMN IF NOT EXISTS image_url       TEXT;
 
 -- CHECK constraints (re-runnable: dropped + readded)
 ALTER TABLE public.tasks DROP CONSTRAINT IF EXISTS tasks_recurrence_check;
@@ -255,6 +256,46 @@ CREATE POLICY "prefs_self" ON public.user_preferences
   FOR ALL TO authenticated
   USING (user_id = auth.uid())
   WITH CHECK (user_id = auth.uid());
+
+
+-- ═══════════════════════════════════════════════════════════════════════════
+--  STORAGE BUCKET — task images (uploaded photos attached to tasks)
+-- ═══════════════════════════════════════════════════════════════════════════
+-- Creates a bucket where authenticated users can upload images into their own
+-- per-user folder. Bucket is public-read so <img src="..."> works without
+-- signed URLs, but paths use unguessable UUIDs and the URL is only exposed
+-- via the tasks table (which is RLS-protected).
+
+INSERT INTO storage.buckets (id, name, public)
+VALUES ('task-images', 'task-images', true)
+ON CONFLICT (id) DO UPDATE SET public = true;
+
+-- Drop existing policies so this script is re-runnable
+DROP POLICY IF EXISTS "task_images_upload_own_folder" ON storage.objects;
+DROP POLICY IF EXISTS "task_images_read_public"      ON storage.objects;
+DROP POLICY IF EXISTS "task_images_delete_own"       ON storage.objects;
+
+-- Anyone signed in can upload, but only into a folder named after their own
+-- user id (e.g. <auth.uid()>/<uuid>.jpg). Prevents cross-user uploads.
+CREATE POLICY "task_images_upload_own_folder" ON storage.objects
+  FOR INSERT TO authenticated
+  WITH CHECK (
+    bucket_id = 'task-images'
+    AND auth.uid()::text = (storage.foldername(name))[1]
+  );
+
+-- Public-read (bucket is public). Lets <img> tags load without auth headers.
+CREATE POLICY "task_images_read_public" ON storage.objects
+  FOR SELECT TO anon, authenticated
+  USING (bucket_id = 'task-images');
+
+-- Owners can delete their own uploads (cleanup when a task is deleted)
+CREATE POLICY "task_images_delete_own" ON storage.objects
+  FOR DELETE TO authenticated
+  USING (
+    bucket_id = 'task-images'
+    AND auth.uid()::text = (storage.foldername(name))[1]
+  );
 
 
 -- ═══════════════════════════════════════════════════════════════════════════
