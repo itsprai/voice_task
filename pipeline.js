@@ -167,10 +167,7 @@ function pipelineCardHTML(task, editMode, editingTaskId) {
       <label class="add-task-field-label" for="edit-${task.id}-recurrence">Repeat</label>
       <select id="edit-${task.id}-recurrence" class="add-task-input add-task-select pipeline-edit-recurrence" data-custom-wrap="edit-${task.id}-custom-recur">${editRecurOpts}</select>
       <div class="custom-recur-wrap ${task.recurrence === 'custom' ? '' : 'is-hidden'}" id="edit-${task.id}-custom-recur-wrap">${customRuleFormHTML(task.recurrence_rule, `edit-${task.id}`)}</div>
-      <label class="pipeline-edit-urgent-row">
-        <input type="checkbox" class="pipeline-edit-urgent" ${task.priority === 'urgent' ? 'checked' : ''}/>
-        Mark as urgent
-      </label>
+      ${priorityPickerHTML(task.priority, `edit-${task.id}`)}
       ${notesAndSubtasksFormHTML(task, `edit-${task.id}`)}
       <div class="pipeline-edit-actions">
         <button class="pipeline-edit-save btn-primary" data-id="${task.id}">Save</button>
@@ -181,7 +178,7 @@ function pipelineCardHTML(task, editMode, editingTaskId) {
 
   const createdLabel = formatCreatedAt(task.createdAt);
   const recurLabel   = recurrenceLabel(task.recurrence, task.recurrence_rule);
-  const urgentMark   = task.priority === 'urgent' ? '<span class="task-urgent-mark" title="Urgent">!</span>' : '';
+  const urgentMark   = taskPriorityBadgeHTML(task);
   const progress     = subtaskProgress(task);
   const progressBadge = progress ? `<span class="subtask-progress">${progress.done}/${progress.total}</span>` : '';
 

@@ -130,6 +130,19 @@ const App = {
         return;
       }
 
+      // Priority picker — segmented control, only one active at a time
+      const priorityPill = e.target.closest('.priority-pill[data-priority-set]');
+      if (priorityPill) {
+        e.preventDefault();
+        const wrap = priorityPill.closest('.priority-picker');
+        if (wrap) {
+          wrap.dataset.priorityValue = priorityPill.dataset.prioritySet;
+          wrap.querySelectorAll('.priority-pill').forEach(b => b.classList.remove('priority-pill--active'));
+          priorityPill.classList.add('priority-pill--active');
+        }
+        return;
+      }
+
       // Open the image viewer when a task-card thumbnail is tapped
       const thumb = e.target.closest('.task-image-thumb');
       if (thumb) {
@@ -791,10 +804,7 @@ const App = {
         <label class="add-task-field-label" for="add-task-recurrence">Repeat</label>
         <select id="add-task-recurrence" class="add-task-input add-task-select" data-custom-wrap="add-task-custom-recur">${recurOpts}</select>
         <div class="custom-recur-wrap is-hidden" id="add-task-custom-recur-wrap">${customRuleFormHTML(null, 'add-task')}</div>
-        <label class="add-task-urgent-row">
-          <input type="checkbox" id="add-task-urgent"/>
-          <span>Mark as urgent</span>
-        </label>
+        ${priorityPickerHTML('normal', 'add-task')}
         ${notesAndSubtasksFormHTML(null, 'add-task')}
         <button id="add-task-submit" class="add-task-btn" data-target-id="${member.id}">Add Task</button>
       </div>
@@ -959,7 +969,7 @@ const App = {
     const _time  = timeInput?.value || new Date().toTimeString().slice(0, 5);
     const _recur = document.getElementById('add-task-recurrence')?.value || 'none';
     const _rule  = _recur === 'custom' ? readCustomRuleFromForm('add-task') : null;
-    const _urgent = document.getElementById('add-task-urgent')?.checked || false;
+    const _priority = document.getElementById('add-task-priority-picker')?.dataset.priorityValue || 'normal';
     const _notes  = document.getElementById('add-task-notes')?.value.trim() || '';
     const _subs   = readSubtasksFromForm(document.getElementById('add-task-subtasks'));
 
@@ -977,7 +987,7 @@ const App = {
       status:          'pending',
       recurrence:      _recur,
       recurrence_rule: _rule,
-      priority:        _urgent ? 'urgent' : 'normal',
+      priority:        _priority,
       notes:           _notes,
       subtasks:        _subs,
       createdAt:       new Date().toISOString(),
@@ -990,8 +1000,9 @@ const App = {
     this._closeManagerTypeSheet();
     this._renderPipeline();
     this._updatePipelineBadge();
-    const toastMsg = _urgent
-      ? 'Urgent task added!'
+    const priorityLabel = { p1: 'P1', p2: 'P2', p3: 'P3' }[_priority];
+    const toastMsg = priorityLabel
+      ? `${priorityLabel} task added!`
       : (_recur !== 'none' ? `Recurring task added (${recurrenceLabel(_recur, _rule).toLowerCase()})` : 'Task added!');
     this.showToast(toastMsg);
   },
@@ -1172,16 +1183,18 @@ const App = {
     result.innerHTML = `
       <p class="preview-label">✓ ${tasks.length > 1 ? tasks.length + ' tasks saved' : 'Task saved'}</p>
       ${tasks.map(t => {
-        const recurLbl = recurrenceLabel(t.recurrence, t.recurrence_rule);
-        const isUrgent = t.priority === 'urgent';
+        const recurLbl  = recurrenceLabel(t.recurrence, t.recurrence_rule);
+        const badge     = taskPriorityBadgeHTML(t);
+        const pri       = t.priority === 'urgent' ? 'p1' : t.priority;
+        const priLabel  = ({ p1: 'P1', p2: 'P2', p3: 'P3' })[pri];
         return `
         <div class="preview-item">
-          <p class="preview-desc">${isUrgent ? '<span class="task-urgent-mark">!</span>' : ''}${escapeHTML(t.description)}</p>
+          <p class="preview-desc">${badge}${escapeHTML(t.description)}</p>
           <div class="preview-meta">
             <span class="chip chip--assignee">${escapeHTML(t.assignee)}</span>
             ${t.dueDate ? `<span class="chip chip--date">${formatDate(t.dueDate)}${t.time ? ' · ' + formatTime(t.time) : ''}</span>` : ''}
             ${recurLbl ? `<span class="chip chip--recur">↻ ${escapeHTML(recurLbl)}</span>` : ''}
-            ${isUrgent ? '<span class="chip chip--urgent">Urgent</span>' : ''}
+            ${priLabel ? `<span class="chip chip--priority chip--priority-${pri}">${priLabel}</span>` : ''}
           </div>
         </div>
       `; }).join('')}
@@ -1603,8 +1616,8 @@ const App = {
         const time  = form.querySelector('.pipeline-edit-time').value;
         if (!desc) return;
         const dueAt    = date && time ? new Date(`${date}T${time}`).getTime() : null;
-        const urgentEl = form.querySelector('.pipeline-edit-urgent');
-        const priority = urgentEl?.checked ? 'urgent' : 'normal';
+        const pickerEl = form.querySelector(`#edit-${id}-priority-picker`);
+        const priority = pickerEl?.dataset.priorityValue || 'normal';
         const recurrence      = form.querySelector(`#edit-${id}-recurrence`)?.value || 'none';
         const recurrence_rule = recurrence === 'custom' ? readCustomRuleFromForm(`edit-${id}`) : null;
         const notes    = form.querySelector(`#edit-${id}-notes`)?.value.trim() || '';
@@ -1784,8 +1797,8 @@ const App = {
         const time = form.querySelector('.pipeline-edit-time').value;
         if (!desc) return;
         const dueAt    = date && time ? new Date(`${date}T${time}`).getTime() : null;
-        const urgentEl = form.querySelector('.pipeline-edit-urgent');
-        const priority = urgentEl?.checked ? 'urgent' : 'normal';
+        const pickerEl = form.querySelector(`#edit-${id}-priority-picker`);
+        const priority = pickerEl?.dataset.priorityValue || 'normal';
         const recurrence      = form.querySelector(`#edit-${id}-recurrence`)?.value || 'none';
         const recurrence_rule = recurrence === 'custom' ? readCustomRuleFromForm(`edit-${id}`) : null;
         const notes    = form.querySelector(`#edit-${id}-notes`)?.value.trim() || '';
@@ -1849,7 +1862,7 @@ const App = {
       const _time   = timeInput?.value || new Date().toTimeString().slice(0, 5);
       const _recur  = document.getElementById('add-assignee-task-recurrence')?.value || 'none';
       const _rule   = _recur === 'custom' ? readCustomRuleFromForm('add-assignee-task') : null;
-      const _urgent = document.getElementById('add-assignee-task-urgent')?.checked || false;
+      const _priority = document.getElementById('add-assignee-task-priority-picker')?.dataset.priorityValue || 'normal';
       const _notes  = document.getElementById('add-assignee-task-notes')?.value.trim() || '';
       const _subs   = readSubtasksFromForm(document.getElementById('add-assignee-task-subtasks'));
 
@@ -1867,7 +1880,7 @@ const App = {
         status:          'pending',
         recurrence:      _recur,
         recurrence_rule: _rule,
-        priority:        _urgent ? 'urgent' : 'normal',
+        priority:        _priority,
         notes:           _notes,
         subtasks:        _subs,
         createdAt:       new Date().toISOString(),
@@ -1880,8 +1893,9 @@ const App = {
       if (formSlot) formSlot.innerHTML = '';
       renderAssigneeTasksPage(this.state.tasks, this.state.assigners, null);
       this._updateAssigneeBadge();
-      const toastMsg = _urgent
-        ? 'Urgent task added!'
+      const priorityLabel = { p1: 'P1', p2: 'P2', p3: 'P3' }[_priority];
+      const toastMsg = priorityLabel
+        ? `${priorityLabel} task added!`
         : (_recur !== 'none' ? `Recurring task added (${recurrenceLabel(_recur, _rule).toLowerCase()})` : 'Task added!');
       this.showToast(toastMsg);
     });

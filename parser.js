@@ -72,10 +72,15 @@ SUBTASKS — only when the user enumerates concrete sub-steps inside ONE task. T
 - If not detected, subtasks = [].
 - Items that are just CONTEXT (names, places, dates) belong in notes, NOT subtasks.
 
-PRIORITY — set "priority" to "urgent" when speech contains words like:
-- "urgent", "urgently", "ASAP", "important", "high priority", "top priority",
-  "critical", "right away", "immediately", "first thing", "drop everything"
-Otherwise default to "normal". Do NOT mark urgent just because there's a near-term deadline like "in 5 min" — only when an urgency adjective is explicit.
+PRIORITY — set "priority" to one of: "p1", "p2", "p3", "normal". Cues:
+- "p1", "priority 1", "priority one", "urgent", "ASAP", "critical",
+  "top priority", "high priority", "drop everything", "right away", "immediately",
+  "first thing" → "p1"
+- "p2", "priority 2", "priority two", "important", "medium priority", "soon" → "p2"
+- "p3", "priority 3", "priority three", "low priority", "no rush",
+  "backlog", "when you can", "whenever" → "p3"
+- No explicit priority cue → "normal"
+Do NOT infer priority from a near-term deadline like "in 5 min" — only when a priority word is explicit.
 
 RECURRENCE — set "recurrence" based on speech cues:
 - "every day", "daily", "each morning/night/evening" → "daily"
@@ -139,7 +144,7 @@ For each task return:
   * "morning" = "09:00", "afternoon" = "14:00", "evening" = "18:00"
 - "recurrence": one of "none", "hourly", "daily", "weekdays", "weekends", "weekly", "fortnightly", "monthly", "quarterly", "biannually", "yearly", "custom". See RECURRENCE + CUSTOM RECURRENCE rules above. Default "none".
 - "recurrence_rule": ONLY when recurrence="custom". See CUSTOM RECURRENCE shape above.
-- "priority": "urgent" or "normal". See PRIORITY rules above. Default "normal".
+- "priority": one of "p1", "p2", "p3", "normal". Cues in PRIORITY rules above. Default "normal".
 - "notes": extra context (see NOTES rules above). Default "".
 - "subtasks": array of short strings (see SUBTASKS rules above). Default [].
 
@@ -204,7 +209,7 @@ If no task found:
       const recurrence_rule = recurrence === 'custom' && t.recurrence_rule
         ? normalizeRecurrenceRule(t.recurrence_rule)
         : null;
-      const priority   = t.priority === 'urgent' ? 'urgent' : 'normal';
+      const priority   = ['p1','p2','p3'].includes(t.priority) ? t.priority : (t.priority === 'urgent' ? 'p1' : 'normal');
       const notes      = typeof t.notes === 'string' ? t.notes.trim() : '';
       const subtasks   = Array.isArray(t.subtasks)
         ? t.subtasks.map(s => String(s).trim()).filter(Boolean).slice(0, 10)
@@ -326,7 +331,11 @@ For each task return:
   - "for the next 5 weeks/times" → add endType:"count", endCount:5
   - "until 2026-12-31" → add endType:"on", endDate:"YYYY-MM-DD"
   Omit "recurrence_rule" entirely (or set null) when recurrence ≠ "custom".
-- "priority": "urgent" if speech contains "urgent","ASAP","important","high/top priority","critical","right away","immediately"; else "normal".
+- "priority": one of "p1", "p2", "p3", "normal". Cues:
+    - "p1" for "P1", "priority 1", "urgent", "ASAP", "critical", "top/high priority", "drop everything", "right away", "immediately"
+    - "p2" for "P2", "priority 2", "important", "medium priority", "soon"
+    - "p3" for "P3", "priority 3", "low priority", "no rush", "backlog", "when you can"
+    - "normal" (default) when no priority cue is present.
 - "notes": extra context not needed in the title (amounts, addresses, IDs, agenda items, links). Empty string if none.
 - "subtasks": only if user enumerates steps ("with steps", "first X then Y then Z"). Otherwise empty array.
 
@@ -389,7 +398,7 @@ If nothing usable: {"tasks":[],"error":"Could not understand. Please speak again
         status:          'pending',
         recurrence,
         recurrence_rule,
-        priority:        t.priority === 'urgent' ? 'urgent' : 'normal',
+        priority:        ['p1','p2','p3'].includes(t.priority) ? t.priority : (t.priority === 'urgent' ? 'p1' : 'normal'),
         notes:           typeof t.notes === 'string' ? t.notes.trim() : '',
         subtasks:        Array.isArray(t.subtasks)
           ? t.subtasks.map(s => String(s).trim()).filter(Boolean).slice(0, 10)

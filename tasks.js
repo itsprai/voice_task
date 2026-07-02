@@ -56,12 +56,20 @@ function formatCreatedAt(isoStr) {
   return formatDateTime(ds, ts);
 }
 
+// Priority rank: P1 > P2 > P3 > none. Legacy 'urgent' == P1 for compat.
+function priorityRank(p) {
+  if (p === 'p1' || p === 'urgent') return 3;
+  if (p === 'p2') return 2;
+  if (p === 'p3') return 1;
+  return 0;
+}
+
 function sortByDateTime(tasks, direction = 'asc') {
   return [...tasks].sort((a, b) => {
-    // Urgent always floats above non-urgent within the same section
-    const aU = a.priority === 'urgent' ? 1 : 0;
-    const bU = b.priority === 'urgent' ? 1 : 0;
-    if (aU !== bU) return bU - aU;
+    // Higher priority floats above lower within the same section
+    const aR = priorityRank(a.priority);
+    const bR = priorityRank(b.priority);
+    if (aR !== bR) return bR - aR;
 
     if (!a.dueDate && !b.dueDate) return 0;
     if (!a.dueDate) return 1;
@@ -71,6 +79,41 @@ function sortByDateTime(tasks, direction = 'asc') {
     const diff = aKey < bKey ? -1 : aKey > bKey ? 1 : 0;
     return direction === 'asc' ? diff : -diff;
   });
+}
+
+// Small colored circle badge for P1/P2/P3 (and legacy urgent → P1). Empty
+// string when the task has no priority set.
+function taskPriorityBadgeHTML(task) {
+  const p = task?.priority;
+  if (p === 'p1' || p === 'urgent') return '<span class="task-priority-badge task-priority-badge--p1" title="Priority 1">1</span>';
+  if (p === 'p2')                    return '<span class="task-priority-badge task-priority-badge--p2" title="Priority 2">2</span>';
+  if (p === 'p3')                    return '<span class="task-priority-badge task-priority-badge--p3" title="Priority 3">3</span>';
+  return '';
+}
+
+// Reusable segmented-picker for priority. Used in add-task + edit forms.
+// idPrefix isolates ids for parallel forms (add vs edit-<taskId>).
+function priorityPickerHTML(currentPriority, idPrefix) {
+  const p = currentPriority === 'urgent' ? 'p1' : (currentPriority || 'normal');
+  const opts = [
+    { value: 'normal', label: 'None', cls: 'none' },
+    { value: 'p3',     label: 'P3',   cls: 'p3'   },
+    { value: 'p2',     label: 'P2',   cls: 'p2'   },
+    { value: 'p1',     label: 'P1',   cls: 'p1'   }
+  ];
+  const pills = opts.map(o => `
+    <button type="button"
+            class="priority-pill priority-pill--${o.cls} ${p === o.value ? 'priority-pill--active' : ''}"
+            data-priority-set="${o.value}">
+      ${o.label}
+    </button>
+  `).join('');
+  return `
+    <label class="add-task-field-label">Priority</label>
+    <div class="priority-picker" id="${idPrefix}-priority-picker" data-priority-value="${p}">
+      ${pills}
+    </div>
+  `;
 }
 
 // Personal task = user is both assigner and assignee. Hidden from every view
@@ -784,7 +827,7 @@ function taskCardHTML(task, nameMap = {}, opts = {}) {
 
   const createdLabel = formatCreatedAt(task.createdAt);
   const recurLabel   = recurrenceLabel(task.recurrence, task.recurrence_rule);
-  const urgentMark   = task.priority === 'urgent' ? '<span class="task-urgent-mark" title="Urgent">!</span>' : '';
+  const urgentMark   = taskPriorityBadgeHTML(task);
   const progress     = subtaskProgress(task);
   const progressBadge = progress ? `<span class="subtask-progress">${progress.done}/${progress.total}</span>` : '';
 

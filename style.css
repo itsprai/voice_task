@@ -815,14 +815,14 @@ body::before {
 .chip--recur  { background: var(--primary-soft); color: var(--primary); }
 .chip--urgent { background: var(--danger-soft); color: var(--danger); }
 
-/* Urgent inline badge — small red ! before the task description */
-.task-urgent-mark {
+/* Priority inline badge — small circle (P1/P2/P3) before the task description */
+.task-priority-badge,
+.task-urgent-mark { /* .task-urgent-mark kept for legacy DOM refs — same styling */
   display: inline-flex;
   align-items: center;
   justify-content: center;
   width: 16px; height: 16px;
   border-radius: 50%;
-  background: var(--danger);
   color: white;
   font-size: 10px;
   font-weight: 800;
@@ -833,7 +833,45 @@ body::before {
   position: relative;
   top: -1px;
   font-family: inherit;
+  background: var(--danger);
 }
+.task-priority-badge--p1 { background: var(--danger); }
+.task-priority-badge--p2 { background: var(--warning, #d97706); }
+.task-priority-badge--p3 { background: #64748b; }
+
+/* Priority segmented picker — replaces the urgent checkbox in add/edit forms */
+.priority-picker {
+  display: inline-flex;
+  gap: 4px;
+  padding: 3px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  margin-bottom: 8px;
+}
+.priority-pill {
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  font-size: 12px; font-weight: 600;
+  padding: 6px 12px;
+  border-radius: 7px;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+  font-family: inherit;
+}
+.priority-pill:hover { color: var(--text); }
+.priority-pill--active { color: white; background: var(--muted); }
+.priority-pill--p1.priority-pill--active { background: var(--danger); }
+.priority-pill--p2.priority-pill--active { background: var(--warning, #d97706); }
+.priority-pill--p3.priority-pill--active { background: #64748b; }
+.priority-pill--none.priority-pill--active { background: var(--text); }
+
+/* Priority chip in the voice preview meta line */
+.chip--priority        { color: white; }
+.chip--priority-p1     { background: var(--danger); }
+.chip--priority-p2     { background: var(--warning, #d97706); }
+.chip--priority-p3     { background: #64748b; }
 
 /* ─── Notes preview on task cards ─────────────────────────────────────── */
 .task-notes-preview {
