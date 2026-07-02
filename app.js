@@ -995,12 +995,13 @@ const App = {
     };
 
     this.state.tasks = Storage.add(newTask);
+    this._applyPriorityCascadeOnUpsert(newTask.id, _priority);
     Notifications.scheduleLocal(newTask);
     Notifications.sendAssignmentPush(newTask);
     this._closeManagerTypeSheet();
     this._renderPipeline();
     this._updatePipelineBadge();
-    const priorityLabel = { p1: 'P1', p2: 'P2', p3: 'P3', p4: 'P4' }[_priority];
+    const priorityLabel = { p1: 'P1', p2: 'P2', p3: 'P3', p4: 'P4', p5: 'P5' }[_priority];
     const toastMsg = priorityLabel
       ? `${priorityLabel} task added!`
       : (_recur !== 'none' ? `Recurring task added (${recurrenceLabel(_recur, _rule).toLowerCase()})` : 'Task added!');
@@ -1079,6 +1080,31 @@ const App = {
     }
   },
 
+  // Priority cascade — called after a task is set to a P1–P5 priority.
+  // Displaces any existing task at that level within the same scope, pushing
+  // it down one level (and cascading further as needed).
+  _applyPriorityCascadeOnUpsert(taskId, newPriority) {
+    if (!PRIORITY_LEVELS.includes(newPriority)) return;
+    const changes = computePriorityCascadeDown(this.state.tasks, taskId, newPriority);
+    if (!changes.length) return;
+    this.state.tasks = Storage.updateBatch(changes);
+    // Reschedule notifications for any bumped tasks (in case priority-based UI
+    // triggers change — it doesn't today, but future-proof)
+    for (const c of changes) {
+      const t = this.state.tasks.find(x => x.id === c.id);
+      if (t) { Notifications.cancelLocal(t.id); Notifications.scheduleLocal(t); }
+    }
+  },
+
+  // Called when a priority-holding task is marked completed. Strips the
+  // task's priority to 'normal' and shifts every lower-priority task up.
+  _applyPriorityCascadeOnComplete(task) {
+    if (!task || !PRIORITY_LEVELS.includes(task.priority)) return;
+    const changes = computePriorityCascadeUp(this.state.tasks, task.id);
+    if (!changes.length) return;
+    this.state.tasks = Storage.updateBatch(changes);
+  },
+
   // When a recurring task gets marked complete, create the next instance.
   // Skips silently for non-recurring tasks.
   _maybeGenerateNextRecurrence(task) {
@@ -1098,6 +1124,7 @@ const App = {
       updatedAt:       nowIso
     };
     this.state.tasks = Storage.add(nextTask);
+    this._applyPriorityCascadeOnUpsert(nextTask.id, nextTask.priority);
     Notifications.scheduleLocal(nextTask);
   },
 
@@ -1186,7 +1213,7 @@ const App = {
         const recurLbl  = recurrenceLabel(t.recurrence, t.recurrence_rule);
         const badge     = taskPriorityBadgeHTML(t);
         const pri       = t.priority === 'urgent' ? 'p1' : t.priority;
-        const priLabel  = ({ p1: 'P1', p2: 'P2', p3: 'P3', p4: 'P4' })[pri];
+        const priLabel  = ({ p1: 'P1', p2: 'P2', p3: 'P3', p4: 'P4', p5: 'P5' })[pri];
         return `
         <div class="preview-item">
           <p class="preview-desc">${badge}${escapeHTML(t.description)}</p>
@@ -1279,6 +1306,7 @@ const App = {
 
         tasks.forEach(task => {
           this.state.tasks = Storage.add(task);
+          this._applyPriorityCascadeOnUpsert(task.id, task.priority);
           Notifications.scheduleLocal(task);
           Notifications.sendAssignmentPush(task);
         });
@@ -1358,6 +1386,7 @@ const App = {
           this.state.tasks = Storage.update(task.id, { status: next });
           if (next === 'completed') {
             Notifications.cancelLocal(task.id);
+            this._applyPriorityCascadeOnComplete(task);
             this._maybeGenerateNextRecurrence(task);
           } else {
             Notifications.scheduleLocal({ ...task, status: 'pending' });
@@ -1623,6 +1652,7 @@ const App = {
         const notes    = form.querySelector(`#edit-${id}-notes`)?.value.trim() || '';
         const subtasks = readSubtasksFromForm(form.querySelector(`#edit-${id}-subtasks`));
         this.state.tasks = Storage.update(id, { description: desc, dueDate: date || null, time: time || null, dueAt, priority, recurrence, recurrence_rule, notes, subtasks });
+        this._applyPriorityCascadeOnUpsert(id, priority);
         Sync.push(this.state.tasks);
         Notifications.cancelLocal(id);
         const updated = this.state.tasks.find(t => t.id === id);
@@ -1647,6 +1677,7 @@ const App = {
           this.state.tasks = Storage.update(task.id, { status: next });
           if (next === 'completed') {
             Notifications.cancelLocal(task.id);
+            this._applyPriorityCascadeOnComplete(task);
             this._maybeGenerateNextRecurrence(task);
           } else {
             Notifications.scheduleLocal({ ...task, status: 'pending' });
@@ -1718,6 +1749,7 @@ const App = {
         };
 
         this.state.tasks = Storage.add(newTask);
+        this._applyPriorityCascadeOnUpsert(newTask.id, newTask.priority);
         Notifications.scheduleLocal(newTask);
         Notifications.sendAssignmentPush(newTask);
         this._renderPipeline();
@@ -1775,6 +1807,7 @@ const App = {
           this.state.tasks = Storage.update(task.id, { status: next });
           if (next === 'completed') {
             Notifications.cancelLocal(task.id);
+            this._applyPriorityCascadeOnComplete(task);
             this._maybeGenerateNextRecurrence(task);
           } else {
             Notifications.scheduleLocal({ ...task, status: 'pending' });
@@ -1888,12 +1921,13 @@ const App = {
       };
 
       this.state.tasks = Storage.add(newTask);
+      this._applyPriorityCascadeOnUpsert(newTask.id, _priority);
       Notifications.scheduleLocal(newTask);
       this.state.showAssigneeAddForm = false;
       if (formSlot) formSlot.innerHTML = '';
       renderAssigneeTasksPage(this.state.tasks, this.state.assigners, null);
       this._updateAssigneeBadge();
-      const priorityLabel = { p1: 'P1', p2: 'P2', p3: 'P3', p4: 'P4' }[_priority];
+      const priorityLabel = { p1: 'P1', p2: 'P2', p3: 'P3', p4: 'P4', p5: 'P5' }[_priority];
       const toastMsg = priorityLabel
         ? `${priorityLabel} task added!`
         : (_recur !== 'none' ? `Recurring task added (${recurrenceLabel(_recur, _rule).toLowerCase()})` : 'Task added!');

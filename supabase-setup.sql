@@ -91,7 +91,7 @@ ALTER TABLE public.tasks
 ALTER TABLE public.tasks DROP CONSTRAINT IF EXISTS tasks_priority_check;
 ALTER TABLE public.tasks
   ADD CONSTRAINT tasks_priority_check
-  CHECK (priority IN ('normal','urgent','p1','p2','p3','p4'));
+  CHECK (priority IN ('normal','urgent','p1','p2','p3','p4','p5'));
 
 CREATE INDEX IF NOT EXISTS idx_tasks_assigner ON public.tasks (assigner_id);
 CREATE INDEX IF NOT EXISTS idx_tasks_assignee ON public.tasks (assignee_id);

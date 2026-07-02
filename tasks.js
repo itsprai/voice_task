@@ -56,13 +56,83 @@ function formatCreatedAt(isoStr) {
   return formatDateTime(ds, ts);
 }
 
-// Priority rank: P1 > P2 > P3 > P4 > none. Legacy 'urgent' == P1 for compat.
+// Priority rank: P1 > P2 > P3 > P4 > P5 > none. Legacy 'urgent' == P1 for compat.
+const PRIORITY_LEVELS = ['p1', 'p2', 'p3', 'p4', 'p5'];
+
 function priorityRank(p) {
-  if (p === 'p1' || p === 'urgent') return 4;
-  if (p === 'p2') return 3;
-  if (p === 'p3') return 2;
-  if (p === 'p4') return 1;
+  if (p === 'p1' || p === 'urgent') return 5;
+  if (p === 'p2') return 4;
+  if (p === 'p3') return 3;
+  if (p === 'p4') return 2;
+  if (p === 'p5') return 1;
   return 0;
+}
+
+// Return the next priority level DOWN (P1 → P2 → … → P5 → normal).
+function nextPriorityDown(p) {
+  const idx = PRIORITY_LEVELS.indexOf(p);
+  if (idx < 0 || idx === PRIORITY_LEVELS.length - 1) return 'normal';
+  return PRIORITY_LEVELS[idx + 1];
+}
+
+// Scope key for uniqueness — per assigner→assignee pair (per-tab view).
+function priorityScopeKey(task) {
+  return `${task?.assigner_id || ''}::${task?.assignee_id || ''}`;
+}
+
+// Given the current tasks list, if we're setting `targetTaskId` to `targetPri`,
+// compute cascade-down updates for OTHER tasks in the same scope. Returns
+// [{ id, priority }, ...] — apply via Storage.updateBatch. Empty if no cascade.
+// Legacy 'urgent' is NOT counted as a P1 holder (per user instruction).
+function computePriorityCascadeDown(tasks, targetTaskId, targetPri) {
+  if (!PRIORITY_LEVELS.includes(targetPri)) return [];
+  const target = tasks.find(t => t.id === targetTaskId);
+  if (!target) return [];
+  const scopeKey = priorityScopeKey(target);
+
+  // Working copy of OTHER tasks in the same scope, active only
+  const working = tasks
+    .filter(t => t.id !== targetTaskId && priorityScopeKey(t) === scopeKey && t.status !== 'completed')
+    .map(t => ({ id: t.id, orig: t.priority, priority: t.priority }));
+
+  // Recursive bump: displace the holder of `pri`, then any newly-displaced task
+  function bump(pri) {
+    if (!pri || pri === 'normal') return;
+    const holder = working.find(w => w.priority === pri);
+    if (!holder) return;
+    const next = nextPriorityDown(pri);
+    bump(next);
+    holder.priority = next;
+  }
+  bump(targetPri);
+
+  return working.filter(w => w.orig !== w.priority).map(w => ({ id: w.id, priority: w.priority }));
+}
+
+// When a task with a priority is completed, its priority becomes 'normal'
+// and every task below it shifts up one level. Returns [{ id, priority }, ...].
+function computePriorityCascadeUp(tasks, completedTaskId) {
+  const done = tasks.find(t => t.id === completedTaskId);
+  if (!done || !PRIORITY_LEVELS.includes(done.priority)) return [];
+  const scopeKey = priorityScopeKey(done);
+  const changes = [{ id: completedTaskId, priority: 'normal' }];
+
+  let vacated = done.priority;
+  while (true) {
+    const next = nextPriorityDown(vacated);
+    if (!next || next === 'normal') break;
+    const holder = tasks.find(t =>
+      t.id !== completedTaskId &&
+      priorityScopeKey(t) === scopeKey &&
+      t.status !== 'completed' &&
+      t.priority === next
+    );
+    if (!holder) break;
+    changes.push({ id: holder.id, priority: vacated });
+    vacated = next;
+  }
+
+  return changes;
 }
 
 function sortByDateTime(tasks, direction = 'asc') {
@@ -82,7 +152,7 @@ function sortByDateTime(tasks, direction = 'asc') {
   });
 }
 
-// Colored pill badge for P1/P2/P3/P4 (and legacy urgent → P1). Empty string
+// Colored pill badge for P1–P5 (and legacy urgent → P1). Empty string
 // when the task has no priority set.
 function taskPriorityBadgeHTML(task) {
   const p = task?.priority;
@@ -90,16 +160,17 @@ function taskPriorityBadgeHTML(task) {
   if (p === 'p2')                    return '<span class="task-priority-badge task-priority-badge--p2" title="Priority 2 — High">P2</span>';
   if (p === 'p3')                    return '<span class="task-priority-badge task-priority-badge--p3" title="Priority 3 — Medium">P3</span>';
   if (p === 'p4')                    return '<span class="task-priority-badge task-priority-badge--p4" title="Priority 4 — Low">P4</span>';
+  if (p === 'p5')                    return '<span class="task-priority-badge task-priority-badge--p5" title="Priority 5 — Lowest">P5</span>';
   return '';
 }
 
 // Reusable segmented-picker for priority. Used in add-task + edit forms.
 // idPrefix isolates ids for parallel forms (add vs edit-<taskId>).
-// Order: highest to lowest for scannability, with None on the far left.
 function priorityPickerHTML(currentPriority, idPrefix) {
   const p = currentPriority === 'urgent' ? 'p1' : (currentPriority || 'normal');
   const opts = [
     { value: 'normal', label: 'None', cls: 'none' },
+    { value: 'p5',     label: 'P5',   cls: 'p5'   },
     { value: 'p4',     label: 'P4',   cls: 'p4'   },
     { value: 'p3',     label: 'P3',   cls: 'p3'   },
     { value: 'p2',     label: 'P2',   cls: 'p2'   },

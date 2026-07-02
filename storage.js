@@ -31,6 +31,24 @@ const Storage = {
     return tasks;
   },
 
+  // Apply multiple partial updates in one save + sync push. Each change is
+  // { id, ...updates }. Used by the priority cascade so 5 shifted tasks
+  // don't trigger 5 separate Sync flushes.
+  updateBatch(changes) {
+    if (!Array.isArray(changes) || !changes.length) return this.load();
+    const tasks = this.load();
+    const now = new Date().toISOString();
+    for (const change of changes) {
+      if (!change?.id) continue;
+      const idx = tasks.findIndex(t => t.id === change.id);
+      if (idx === -1) continue;
+      const { id, ...updates } = change;
+      tasks[idx] = { ...tasks[idx], ...updates, updatedAt: now };
+    }
+    this.save(tasks);
+    return tasks;
+  },
+
   remove(id) {
     const tasks = this.load().filter(t => t.id !== id);
     this.save(tasks);

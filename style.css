@@ -840,7 +840,8 @@ body::before {
 .task-priority-badge--p1 { background: #dc2626; }  /* red    — critical */
 .task-priority-badge--p2 { background: #ea580c; }  /* orange — high     */
 .task-priority-badge--p3 { background: #eab308; }  /* yellow — medium   */
-.task-priority-badge--p4 { background: #64748b; }  /* slate  — low      */
+.task-priority-badge--p4 { background: #3b82f6; }  /* blue   — low      */
+.task-priority-badge--p5 { background: #64748b; }  /* slate  — lowest   */
 
 /* Priority segmented picker — replaces the urgent checkbox in add/edit forms */
 .priority-picker {
@@ -870,7 +871,8 @@ body::before {
 .priority-pill--p1.priority-pill--active { background: #dc2626; }
 .priority-pill--p2.priority-pill--active { background: #ea580c; }
 .priority-pill--p3.priority-pill--active { background: #eab308; }
-.priority-pill--p4.priority-pill--active { background: #64748b; }
+.priority-pill--p4.priority-pill--active { background: #3b82f6; }
+.priority-pill--p5.priority-pill--active { background: #64748b; }
 .priority-pill--none.priority-pill--active { background: var(--text); }
 
 /* Priority chip in the voice preview meta line */
@@ -878,7 +880,8 @@ body::before {
 .chip--priority-p1     { background: #dc2626; }
 .chip--priority-p2     { background: #ea580c; }
 .chip--priority-p3     { background: #eab308; }
-.chip--priority-p4     { background: #64748b; }
+.chip--priority-p4     { background: #3b82f6; }
+.chip--priority-p5     { background: #64748b; }
 
 /* ─── Notes preview on task cards ─────────────────────────────────────── */
 .task-notes-preview {
