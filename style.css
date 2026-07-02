@@ -815,18 +815,19 @@ body::before {
 .chip--recur  { background: var(--primary-soft); color: var(--primary); }
 .chip--urgent { background: var(--danger-soft); color: var(--danger); }
 
-/* Priority inline badge — small circle (P1/P2/P3) before the task description */
+/* Priority inline badge — colored pill (P1/P2/P3/P4) before the task description */
 .task-priority-badge,
-.task-urgent-mark { /* .task-urgent-mark kept for legacy DOM refs — same styling */
+.task-urgent-mark { /* .task-urgent-mark kept for legacy DOM refs */
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 16px; height: 16px;
-  border-radius: 50%;
+  padding: 2px 6px;
+  border-radius: 5px;
   color: white;
   font-size: 10px;
-  font-weight: 800;
-  line-height: 1;
+  font-weight: 700;
+  line-height: 1.15;
+  letter-spacing: 0.02em;
   flex-shrink: 0;
   margin-right: 6px;
   vertical-align: middle;
@@ -834,10 +835,12 @@ body::before {
   top: -1px;
   font-family: inherit;
   background: var(--danger);
+  box-shadow: 0 1px 2px rgba(0,0,0,0.08);
 }
-.task-priority-badge--p1 { background: var(--danger); }
-.task-priority-badge--p2 { background: var(--warning, #d97706); }
-.task-priority-badge--p3 { background: #64748b; }
+.task-priority-badge--p1 { background: #dc2626; }  /* red    — critical */
+.task-priority-badge--p2 { background: #ea580c; }  /* orange — high     */
+.task-priority-badge--p3 { background: #eab308; }  /* yellow — medium   */
+.task-priority-badge--p4 { background: #64748b; }  /* slate  — low      */
 
 /* Priority segmented picker — replaces the urgent checkbox in add/edit forms */
 .priority-picker {
@@ -848,6 +851,7 @@ body::before {
   border: 1px solid var(--border);
   border-radius: 10px;
   margin-bottom: 8px;
+  flex-wrap: wrap;
 }
 .priority-pill {
   border: none;
@@ -859,19 +863,22 @@ body::before {
   cursor: pointer;
   transition: background 0.15s, color 0.15s;
   font-family: inherit;
+  letter-spacing: 0.01em;
 }
 .priority-pill:hover { color: var(--text); }
 .priority-pill--active { color: white; background: var(--muted); }
-.priority-pill--p1.priority-pill--active { background: var(--danger); }
-.priority-pill--p2.priority-pill--active { background: var(--warning, #d97706); }
-.priority-pill--p3.priority-pill--active { background: #64748b; }
+.priority-pill--p1.priority-pill--active { background: #dc2626; }
+.priority-pill--p2.priority-pill--active { background: #ea580c; }
+.priority-pill--p3.priority-pill--active { background: #eab308; }
+.priority-pill--p4.priority-pill--active { background: #64748b; }
 .priority-pill--none.priority-pill--active { background: var(--text); }
 
 /* Priority chip in the voice preview meta line */
 .chip--priority        { color: white; }
-.chip--priority-p1     { background: var(--danger); }
-.chip--priority-p2     { background: var(--warning, #d97706); }
-.chip--priority-p3     { background: #64748b; }
+.chip--priority-p1     { background: #dc2626; }
+.chip--priority-p2     { background: #ea580c; }
+.chip--priority-p3     { background: #eab308; }
+.chip--priority-p4     { background: #64748b; }
 
 /* ─── Notes preview on task cards ─────────────────────────────────────── */
 .task-notes-preview {

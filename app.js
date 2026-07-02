@@ -1000,7 +1000,7 @@ const App = {
     this._closeManagerTypeSheet();
     this._renderPipeline();
     this._updatePipelineBadge();
-    const priorityLabel = { p1: 'P1', p2: 'P2', p3: 'P3' }[_priority];
+    const priorityLabel = { p1: 'P1', p2: 'P2', p3: 'P3', p4: 'P4' }[_priority];
     const toastMsg = priorityLabel
       ? `${priorityLabel} task added!`
       : (_recur !== 'none' ? `Recurring task added (${recurrenceLabel(_recur, _rule).toLowerCase()})` : 'Task added!');
@@ -1186,7 +1186,7 @@ const App = {
         const recurLbl  = recurrenceLabel(t.recurrence, t.recurrence_rule);
         const badge     = taskPriorityBadgeHTML(t);
         const pri       = t.priority === 'urgent' ? 'p1' : t.priority;
-        const priLabel  = ({ p1: 'P1', p2: 'P2', p3: 'P3' })[pri];
+        const priLabel  = ({ p1: 'P1', p2: 'P2', p3: 'P3', p4: 'P4' })[pri];
         return `
         <div class="preview-item">
           <p class="preview-desc">${badge}${escapeHTML(t.description)}</p>
@@ -1893,7 +1893,7 @@ const App = {
       if (formSlot) formSlot.innerHTML = '';
       renderAssigneeTasksPage(this.state.tasks, this.state.assigners, null);
       this._updateAssigneeBadge();
-      const priorityLabel = { p1: 'P1', p2: 'P2', p3: 'P3' }[_priority];
+      const priorityLabel = { p1: 'P1', p2: 'P2', p3: 'P3', p4: 'P4' }[_priority];
       const toastMsg = priorityLabel
         ? `${priorityLabel} task added!`
         : (_recur !== 'none' ? `Recurring task added (${recurrenceLabel(_recur, _rule).toLowerCase()})` : 'Task added!');

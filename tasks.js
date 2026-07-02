@@ -56,11 +56,12 @@ function formatCreatedAt(isoStr) {
   return formatDateTime(ds, ts);
 }
 
-// Priority rank: P1 > P2 > P3 > none. Legacy 'urgent' == P1 for compat.
+// Priority rank: P1 > P2 > P3 > P4 > none. Legacy 'urgent' == P1 for compat.
 function priorityRank(p) {
-  if (p === 'p1' || p === 'urgent') return 3;
-  if (p === 'p2') return 2;
-  if (p === 'p3') return 1;
+  if (p === 'p1' || p === 'urgent') return 4;
+  if (p === 'p2') return 3;
+  if (p === 'p3') return 2;
+  if (p === 'p4') return 1;
   return 0;
 }
 
@@ -81,22 +82,25 @@ function sortByDateTime(tasks, direction = 'asc') {
   });
 }
 
-// Small colored circle badge for P1/P2/P3 (and legacy urgent → P1). Empty
-// string when the task has no priority set.
+// Colored pill badge for P1/P2/P3/P4 (and legacy urgent → P1). Empty string
+// when the task has no priority set.
 function taskPriorityBadgeHTML(task) {
   const p = task?.priority;
-  if (p === 'p1' || p === 'urgent') return '<span class="task-priority-badge task-priority-badge--p1" title="Priority 1">1</span>';
-  if (p === 'p2')                    return '<span class="task-priority-badge task-priority-badge--p2" title="Priority 2">2</span>';
-  if (p === 'p3')                    return '<span class="task-priority-badge task-priority-badge--p3" title="Priority 3">3</span>';
+  if (p === 'p1' || p === 'urgent') return '<span class="task-priority-badge task-priority-badge--p1" title="Priority 1 — Critical">P1</span>';
+  if (p === 'p2')                    return '<span class="task-priority-badge task-priority-badge--p2" title="Priority 2 — High">P2</span>';
+  if (p === 'p3')                    return '<span class="task-priority-badge task-priority-badge--p3" title="Priority 3 — Medium">P3</span>';
+  if (p === 'p4')                    return '<span class="task-priority-badge task-priority-badge--p4" title="Priority 4 — Low">P4</span>';
   return '';
 }
 
 // Reusable segmented-picker for priority. Used in add-task + edit forms.
 // idPrefix isolates ids for parallel forms (add vs edit-<taskId>).
+// Order: highest to lowest for scannability, with None on the far left.
 function priorityPickerHTML(currentPriority, idPrefix) {
   const p = currentPriority === 'urgent' ? 'p1' : (currentPriority || 'normal');
   const opts = [
     { value: 'normal', label: 'None', cls: 'none' },
+    { value: 'p4',     label: 'P4',   cls: 'p4'   },
     { value: 'p3',     label: 'P3',   cls: 'p3'   },
     { value: 'p2',     label: 'P2',   cls: 'p2'   },
     { value: 'p1',     label: 'P1',   cls: 'p1'   }
