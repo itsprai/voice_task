@@ -1837,6 +1837,7 @@ const App = {
         const notes    = form.querySelector(`#edit-${id}-notes`)?.value.trim() || '';
         const subtasks = readSubtasksFromForm(form.querySelector(`#edit-${id}-subtasks`));
         this.state.tasks = Storage.update(id, { description: desc, dueDate: date || null, time: time || null, dueAt, priority, recurrence, recurrence_rule, notes, subtasks });
+        this._applyPriorityCascadeOnUpsert(id, priority);
         Sync.push(this.state.tasks);
         this.state.editingAssigneeTaskId = null;
         renderAssigneeTasksPage(this.state.tasks, this.state.assigners, null);
